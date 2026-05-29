@@ -41,8 +41,9 @@
 | `scripts/register-runner.md` | Mac 注册 self-hosted runner |
 | `docs/GOTCHAS.md` | 7 个部署必读坑点 |
 | `vendor/opencode-review` | 参考底座(submodule),复用其标准 lens prompts + gh-pr-review skill |
-| `vendor/kodus` | 参考源(submodule),借鉴 AST/规则思路;**不运行其重型平台** |
-| `archive/flask-agent/` | 早期从零 Flask+LangGraph 骨架,已被 OpenCode 取代,留作 fallback 参考 |
+| `archive/` | 早期方案(Flask+LangGraph agent、LiteLLM orchestrator),已被 OpenCode 取代,留作 fallback 参考 |
+
+> Kodus 已移除:它是重型 NestJS 平台,不符合轻量取向;**该借鉴的概念(AST 上下文、KodyRules policy-as-code、去重)已记录在研究文档 §9**,实现则由 OpenCode 多 lens 覆盖。
 
 ## 落地顺序
 

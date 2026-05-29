@@ -199,7 +199,9 @@ Anthropic 在 2026 年 2 月更新了条款,新增 **Authentication and Credenti
 
 ---
 
-## 9. Kodus 深入(底座候选)
+## 9. Kodus 深入(已弃用,概念保留于此节)
+
+> 状态:Kodus 代码已从仓库移除(重型 NestJS 平台,不符合轻量取向)。本节作为"借鉴存档"保留——其 AST 上下文、KodyRules、去重思路的实现已由 OpenCode 多 lens(§17)覆盖。
 
 **定位**:开源(AGPLv3)、可完全自托管的 AI code review 引擎,哲学是 **"AST 确定性分析 + LLM 语义分析 + 自定义规则 = 低噪声"**——正好对上"24h 跑但别刷屏"的核心痛点。
 
