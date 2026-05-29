@@ -277,6 +277,62 @@ GitHub Actions (PR 触发, 免费)
 
 ---
 
+## 13. 本地模型能力边界(27B dense vs MoE)与典型场景
+
+**架构定调**:不运行 Kodus 重型平台,改用轻量自研 agent(Flask+RQ+LangGraph+Ollama),Kodus 降为参考源。理由:省资源、全控制,契合"本地免费 token 24h 跑"的取向。`vendor/kodus` 留作借鉴(AST 上下文、KodyRules 格式、去重)。
+
+### 27B dense(Qwen2.5-Coder-32B)启动后的典型场景(按擅长度排序)
+上下文有限 → 只做**边界清晰、局部**的任务:
+1. **Diff 级 review**(PR 改动本身,天然有界)—— 主力场景
+2. **单文件安全模式扫描**(注入、硬编码密钥、危险 API);Web3 项目配合 Slither/Semgrep 给硬证据
+3. **文档/注释同步检查**(签名改了文档没改)—— 可派给 8B 并行
+4. **测试完备性**(改了代码有没有配套测试)—— 配合覆盖率 diff
+5. **明显 bug / 代码异味 / lint 级问题**
+6. **commit message / PR 描述质量**
+
+❌ **放弃业务一致性**:需跨文件/全仓上下文,超 27B 窗口能力,交给升级大脑。
+
+### 切 MoE(如 Qwen3-Coder-30B-A3B)能力会涨吗?
+- **主要收益是速度/吞吐**(3B 激活),**不等于上下文变大**。质量同档,审得更快、24h 能审更多 PR。
+- **能力范围扩展的真正来源是"上下文长度 + 推理力",不是 MoE 本身**:
+  - 换**长上下文模型**(或 Qwen3-Coder-Next 80B-A3B)→ 才谈得上跨文件/多文件推理 → 业务一致性才部分可行
+  - 否则跨文件/决策性的活,仍应**升级到 Claude/Codex**
+- 结论:MoE 让你"更快更多",长上下文/云端大脑才让你"更深"。别指望换 MoE 就解锁业务一致性。
+
+## 14. litebox 不适用(已查证)
+
+[microsoft/litebox](https://github.com/microsoft/litebox) 是 **Rust 写的安全沙箱 library OS**(跑单个进程、收窄host接口),**不是容器/镜像运行时**,无法运行 Kodus 的多服务 docker-compose 栈;且尚在早期、API 不稳。
+- **真正的省资源做法不是 litebox,而是根本不跑 Kodus 平台**——用轻量自研 agent(纯 Python+Ollama,顶多加个 Redis),无需 Docker。
+- 沙箱隔离当前不需要:Semgrep/CodeQL 不执行代码,self-hosted runner/本机已够隔离。将来若要在 review 中执行不可信代码,再评估 litebox/e2b。
+
+## 15. 升级/决策的最佳实践:GitHub PR 作为人机媒介(强烈推荐)
+
+两种把"大上下文/决策"接进来的方式:
+- **(A) 工具内置自动调用 Claude/Codex**:ToS 灰色(订阅被自动化调用)、烧周配额、难审计。**仅作罕见、限流的升级用**,且必须走官方 CLI。
+- **(B) ⭐ GitHub PR 作为媒介(推荐默认)**:本地 bot 把发现作为 PR 评论/review 贴出;**你在 Claude Code/Codex 里交互式打开 PR、读评论、对存疑项深挖与决策**。异步、可审计、人在环、**完全合规**(你本人交互式使用订阅)、不烧自动化配额、留存记录。
+
+**完整 PR 生命周期(最佳实践)**:
+```
+1. 你/同事开 PR
+2. [免费 GitHub Actions] Semgrep/CodeQL/test/coverage → 硬证据(SARIF)
+3. [本地 24h bot] Qwen 在硬证据上 review → 结构化评论贴回 PR,分级
+      - 局部问题(安全/文档/测试/bug):直接给可操作建议
+      - 跨文件/业务/决策性:标 `needs-human-brain` 标签,只提问不下结论
+4. [你,按自己节奏] 在 Claude Code / Codex 打开 PR:
+      - 扫一遍 bot 的分级评论(秒级决定 merge / 改 / 忽略)
+      - 对 `needs-human-brain` 项,用 Claude/Codex 交互式深挖 + 决定 + 让它改
+5. merge
+```
+要点:**bot 做分诊(triage),你+大模型做判断(judgment)**——这是 2026 主流的人机分工。可选中间档:对极少数高价值 PR,本地 bot 经官方 `claude -p` 自动升级,但设日配额硬上限(见 §1)。
+
+## 16. 两种能力:被动 PR review + 主动代码库扫描
+
+不止跟踪已有 PR,还要能**主动扫描代码库**给质量/安全/性能评估:
+- **被动(事件驱动)**:webhook,PR 来了就审(本仓 `agent/`)。
+- **主动(定时扫描)**:`on: schedule`(GitHub Actions cron)或本地 cron,定期对全仓/指定目录跑一遍,产出报告或开 issue。无需手动维护 clone(Actions 自动签出;本地扫描则指向已 clone 目录)。
+
+---
+
 ## 参考来源
 
 - [10 Open Source AI Code Review Tools Tested (2026) — Augment Code](https://www.augmentcode.com/tools/open-source-ai-code-review-tools-worth-trying)
