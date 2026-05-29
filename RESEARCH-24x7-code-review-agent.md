@@ -333,6 +333,24 @@ GitHub Actions (PR 触发, 免费)
 
 ---
 
+## 17. 底座决策:OpenCode + 多 lens(路线乙,已采纳)
+
+调研轻量可 fork 方案后(PR-Agent / shin-pr-review-agent / agentuse / Gito / OpenCode),采纳 **OpenCode + opencode-review 多 lens 编排**:
+
+- **为什么不从零写**:`agent/`(Flask+RQ+LangGraph)能跑但不成熟;站在成熟工具上更省力。已归档到 `archive/flask-agent/` 作 fallback。
+- **为什么不是 PR-Agent(B)**:Qodo 已弃为 legacy;本地模型有静默回退 OpenAI 的 bug(#2098/#2083 4+月未修),对"代码不出网"致命。
+- **为什么 OpenCode**:provider-agnostic agent 运行时(类 Claude Code),**同一工具本地跑 24h、切订阅做深审**;`opencode-review` 已实现 orchestrator + 5 lens 并行 fan-out + 结构化 JSON + 自动 inline 评论(连行号校验/422 恢复都做好);可跑在 GitHub runner(免费算力)。
+
+**本仓适配**(`opencode.json`):
+- provider 改 **ollama 本地**(`@ai-sdk/openai-compatible` → `localhost:11434/v1`),模型 Qwen2.5-Coder-32B / Qwen3-8B。
+- lens:security(**OWASP + Web3/Paymaster/EIP-7702 专项**,本仓自定义)、testing、**docs(本仓自加,补第7项诉求)**、consistency 默认启用;design/solid 默认关(本地 27B 较吃力 + 串行慢),留升级深审。
+- 本地并发=1(`OLLAMA_NUM_PARALLEL=1`),orchestrator 并行 fan-out 实际在 Ollama 排队,避免 OOM。
+- `vendor/opencode-review` 作参考 submodule:复用标准 lens prompts 与 gh-pr-review skill;无 LICENSE,故不拷贝进本仓,运行时按路径引用。
+
+**升级深审仍走 PR-as-medium(§15)**,不在配置里自动调订阅。
+
+---
+
 ## 参考来源
 
 - [10 Open Source AI Code Review Tools Tested (2026) — Augment Code](https://www.augmentcode.com/tools/open-source-ai-code-review-tools-worth-trying)
@@ -347,5 +365,8 @@ GitHub Actions (PR 触发, 免费)
 - [Kodus Policy-as-Code Review](https://kodus.io/policy-as-code-review/) · [Show HN: Kodus（AST + LLM, less noise）](https://news.ycombinator.com/item?id=43572816) · [Kodus CR CLI](https://github.com/kodustech/kodus-ai-cr)
 - [GitHub Actions Billing & Usage](https://docs.github.com/en/actions/concepts/billing-and-usage) · [Actions 定价变更（2026）](https://resources.github.com/actions/2026-pricing-changes-for-github-actions/) · [自托管 runner 计费推迟](https://devclass.com/2025/12/17/github-to-charge-for-self-hosted-runners-from-march-2026/)
 - [About GitHub Advanced Security（CodeQL 私有仓需 GHAS）](https://docs.github.com/en/get-started/learning-about-github/about-github-advanced-security) · [About code scanning with CodeQL](https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning-with-codeql)
+- [OpenCode GitHub PR Review 文档](https://opencode.ai/docs/github/) · [OpenCode Providers（本地/兼容端点）](https://opencode.ai/docs/providers/) · [OpenCode + Ollama（官方集成）](https://docs.ollama.com/integrations/opencode)
+- [cedricwider/opencode-review（多 lens 编排底座）](https://github.com/cedricwider/opencode-review) · [BerriAI/shin-pr-review-agent](https://github.com/BerriAI/shin-pr-review-agent) · [agentuse/pr-review-agent](https://github.com/agentuse/pr-review-agent) · [Nayjest/Gito](https://github.com/Nayjest/Gito)
+- [Using OpenCode in CI/CD for AI PR reviews — Martin Alderson](https://martinalderson.com/posts/using-opencode-in-cicd-for-ai-pull-request-reviews/) · [microsoft/litebox](https://github.com/microsoft/litebox)
 </content>
 </invoke>

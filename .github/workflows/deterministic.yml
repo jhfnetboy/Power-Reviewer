@@ -1,0 +1,40 @@
+# 确定性层:免费 GitHub 托管 runner,产出硬证据(SARIF)供 OpenCode 的 security lens 在其上推理。
+name: deterministic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest   # 免费托管 runner
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Semgrep (通用 SAST)
+        run: |
+          pipx install semgrep
+          semgrep --config auto --sarif --output semgrep.sarif . || true
+
+      # Web3 仓启用:Solidity 专用静态分析(他们的代码大量是合约)
+      - name: Slither (Solidity, 可选)
+        if: ${{ hashFiles('**/*.sol') != '' }}
+        run: |
+          pipx install slither-analyzer || true
+          slither . --sarif slither.sarif || true
+
+      # TODO(按项目语言补全):单测 + 覆盖率 + 覆盖率 diff(揪"改了代码没加测试")
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: deterministic-evidence
+          path: |
+            semgrep.sarif
+            slither.sarif
+          if-no-files-found: warn

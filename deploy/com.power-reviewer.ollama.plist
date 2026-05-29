@@ -13,6 +13,9 @@
   <dict>
     <key>OLLAMA_KEEP_ALIVE</key><string>-1</string>
     <key>OLLAMA_MAX_LOADED_MODELS</key><string>1</string>
+    <!-- 坑#6:OpenCode orchestrator 会并行 fan-out 多个 lens 到同一 Ollama。
+         64GB 上 24GB 模型,串行执行避免 OOM。需要吞吐就排队,别真并行。 -->
+    <key>OLLAMA_NUM_PARALLEL</key><string>1</string>
   </dict>
   <key>KeepAlive</key><true/>
   <key>RunAtLoad</key><true/>
