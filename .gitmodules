@@ -1,0 +1,3 @@
+[submodule "vendor/kodus"]
+	path = vendor/kodus
+	url = git@github.com:jhfnetboy/kodus-ai.git
