@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 发现层:用 gh search 镜像 prbot 的分类 + 枚举三个 org 的活跃仓,输出机读工作项(JSONL,一行一个)。
-# 为什么轮询而非 webhook:你要 review 的很多是【别人 org 里的 PR】,你没有那些仓的 Actions 权限,
-# 但 gh search 用你自己的身份在哪都能查。owned 仓可另配 Actions 降延迟(见 .github/workflows/)。
-# 注:不用 set -e —— 代理(7890)偶发 reset,单个 gh 失败不该整脚本退出;改用每调用重试 3 次(同 prbot)。
+# 发现层:用 gh search 找【限定在配置的 org 内、与我相关】的 PR + 枚举活跃仓(P2)。输出 JSONL。
+# 范围 = prbot 的 ~/.config/prbot/repos.conf(org 名 → --owner;owner/repo → --repo)。
+# 轮询而非 webhook:这些 org 的仓你未必有 Actions 权限,但 gh search 用你身份在哪都能查。
+# 注:不用 set -e —— 代理(7890)偶发 reset,单个 gh 失败不该整脚本退出;每调用重试 3 次(同 prbot)。
 set -uo pipefail
 ORGS_CONF="${ORGS_CONF:-$HOME/.config/prbot/repos.conf}"
 
@@ -16,13 +16,20 @@ emit(){ # prio type repo [num] [sha]
 }
 pr_sha(){ ghv pr view "$2" --repo "$1" --json headRefOid -q .headRefOid; }
 
-# ── P0a:别人请我 review(最该处理)──
-ghj search prs --review-requested=@me --state=open --json repository,number --limit 50 \
+# 从 repos.conf 构造 gh search 的范围限定:org 名 → --owner;owner/repo → --repo
+SCOPE=()
+while read -r line; do
+  case "$line" in ''|\#*) continue ;; esac
+  if [[ "$line" == */* ]]; then SCOPE+=(--repo "$line"); else SCOPE+=(--owner "$line"); fi
+done < "$ORGS_CONF"
+
+# ── P0a:这三个 org 内、别人请我 review 的 PR ──
+ghj search prs --review-requested=@me --state=open "${SCOPE[@]}" --json repository,number --limit 50 \
  | jq -r '.[] | "\(.repository.nameWithOwner)\t\(.number)"' \
  | while IFS=$'\t' read -r repo num; do emit P0 review_incoming "$repo" "$num" "$(pr_sha "$repo" "$num")"; done
 
-# ── P0b:我自己的 open PR(被打回/更新都重审)──
-ghj search prs --author=@me --state=open --json repository,number --limit 50 \
+# ── P0b:这三个 org 内、我自己开的 open PR ──
+ghj search prs --author=@me --state=open "${SCOPE[@]}" --json repository,number --limit 50 \
  | jq -r '.[] | "\(.repository.nameWithOwner)\t\(.number)"' \
  | while IFS=$'\t' read -r repo num; do emit P0 review_own "$repo" "$num" "$(pr_sha "$repo" "$num")"; done
 
