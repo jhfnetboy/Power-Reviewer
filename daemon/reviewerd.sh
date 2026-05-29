@@ -38,21 +38,27 @@ escalate_pr(){ # repo num
 }
 
 run_once(){
-  local items; items="$("$HERE/discover.sh" 2>/dev/null)" || { log "discover 失败"; return 1; }
+  log "🔍 发现工作项中…(gh search 走代理可能慢/需重试 + 枚举 org 仓,请耐心 ~10-60s)"
+  local items; items="$("$HERE/discover.sh" 2>/dev/null)" || { log "discover 失败(代理?下轮重试)"; return 1; }
+  local n0 n2
+  n0=$(jq -c 'select(.prio=="P0" and .num!=null)' <<<"$items" 2>/dev/null | grep -c . || true)
+  n2=$(jq -c 'select(.prio=="P2")'                <<<"$items" 2>/dev/null | grep -c . || true)
+  log "📋 发现 P0 待审 PR=${n0:-0} | P2 巡检仓=${n2:-0}"
 
-  # ── P0:PR 审查(去重:同 head SHA 不重审)──
-  local p0; p0="$(jq -c 'select(.prio=="P0" and .num!=null)' <<<"$items")"
+  # ── P0:PR 审查。去重(同 head SHA 不重审)+ 每轮上限(防第一轮 marathon)──
+  local cap="${MAX_REVIEWS_PER_CYCLE:-3}" done=0 skipped=0
   while IFS= read -r it; do
     [[ -z "$it" ]] && continue
     local repo num sha; repo=$(jq -r .repo <<<"$it"); num=$(jq -r .num <<<"$it"); sha=$(jq -r .head <<<"$it")
-    if reviewed "$repo" "$num" "$sha"; then log "skip(已审) $repo#$num@${sha:0:7}"; continue; fi
+    reviewed "$repo" "$num" "$sha" && { skipped=$((skipped+1)); continue; }
+    if [[ "$done" -ge "$cap" ]]; then log "⏸ 本轮已审 $cap 个(上限 MAX_REVIEWS_PER_CYCLE),其余下轮继续"; break; fi
+    done=$((done+1)); log "[$done/$cap] 开始审 $repo#$num@${sha:0:7}"
     review_pr "$repo" "$num" && mark "$repo" "$num" "$sha"
-    # escalate_pr "$repo" "$num"   # ← 接好本地审查、能判定 severity 后再开
-  done <<< "$p0"
+    # escalate_pr "$repo" "$num"   # ← 接好 severity 判定后再开
+  done <<< "$(jq -c 'select(.prio=="P0" and .num!=null)' <<<"$items")"
 
-  # ── P2:背景巡检(长线、低优先、空闲填充;每轮只推进 $SWEEP_PER_CYCLE 个)──
-  # TODO: 文档完整性/文档一致性/整仓代码质量评估。维护 $STATE_DIR/sweep-ledger 轮转,避免重复扫同一处。
-  log "P0 处理完。背景巡检(P2)待实现。"
+  # P2 背景巡检(文档完整性/一致性/质量)待实现:维护 sweep-ledger 轮转。
+  log "✅ 本轮完成:新审 $done 个,跳过(已审)$skipped 个。💤 睡 ${POLL_INTERVAL}s"
 }
 
 log "reviewerd 启动 | 间隔=${POLL_INTERVAL}s | orgs=${ORGS_CONF}"
