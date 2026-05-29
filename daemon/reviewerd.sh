@@ -21,13 +21,36 @@ mark(){ printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$SEEN"; }
 esc_count(){ [[ -f "$ESC_LOG" ]] && wc -l < "$ESC_LOG" | tr -d ' ' || echo 0; }
 
 # 本地多维度审查(只评论,绝不改代码)
-review_pr(){ # repo num
+review_pr(){ # repo num —— 按 REVIEW_MODE 派发
+  if [ "${REVIEW_MODE:-direct}" = "opencode" ]; then review_pr_opencode "$@"; else review_pr_direct "$@"; fi
+}
+
+# 直评(路径2,非 agentic):diff → omlx 逐 lens → JSON → 发评论。稳/快。
+review_pr_direct(){
   local repo="$1" num="$2"
-  log "  → 直评 $repo#$num (${REVIEW_MODEL##*/} via omlx, 非agentic)"
-  # 路径2:直评。不用 opencode agentic(本地模型 tool-call omlx 解析不了),纯 chat completion。
+  log "  → 直评 $repo#$num (${REVIEW_MODEL##*/})"
   OMLX_API_KEY="${OMLX_API_KEY:-}" OMLX_BASE="${OMLX_BASE:-http://localhost:8088/v1}" \
     python3 "$REPO_ROOT/review/direct_review.py" --repo "$repo" --pr "$num" \
       --model "$REVIEW_MODEL" --lenses "$REVIEW_LENSES" ${DRY_RUN:+--dry-run}
+}
+
+# OpenCode agentic 多 lens:浅 clone + checkout PR,让 pr-reviewer 自主探索仓库再发 inline review。
+# 需 scripts/sync-opencode-global.sh 装好全局配置 + 模型支持 tool-call(Qwen3-Coder ✓)。
+review_pr_opencode(){
+  local repo="$1" num="$2" tmp; tmp="$(mktemp -d)"
+  log "  → OpenCode agentic 审 $repo#$num (${REVIEW_MODEL##*/})"
+  if gh repo clone "$repo" "$tmp" -- --depth 50 -q 2>/dev/null && ( cd "$tmp" && gh pr checkout "$num" -q 2>/dev/null ); then
+    if [ -n "${DRY_RUN:-}" ]; then
+      ( cd "$tmp" && opencode run --agent "${OPENCODE_AGENT:-pr-reviewer}" -m "$REVIEW_MODEL" \
+          "Review current branch against its base. No PR number — print the review to stdout, do not post. Do not edit." )
+    else
+      ( cd "$tmp" && opencode run --agent "${OPENCODE_AGENT:-pr-reviewer}" -m "$REVIEW_MODEL" \
+          "Review PR #$num and post the synthesized inline review via the gh-pr-review skill. Do not edit code." )
+    fi
+  else
+    log "    clone/checkout $repo#$num 失败(代理?权限?)跳过"
+  fi
+  rm -rf "$tmp"
 }
 
 # 升级深审:仅高价值/被本地标 critical 的 PR,且当日未超配额。官方 CLI,合规。

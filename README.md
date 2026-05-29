@@ -29,6 +29,25 @@
 >
 > **升级深审**(复杂/安全关键)走 **PR-as-medium**:bot 贴评论,你在 Claude Code/Codex 里交互式深挖——合规且不烧订阅配额(见研究文档 §15)。
 
+## 两个审查模式(两个"产品",`.env` 里 `REVIEW_MODE` 切换)
+
+| | **direct(默认)** | **opencode(agentic)** |
+|---|---|---|
+| 怎么审 | 把 diff 直接喂模型 → 逐 lens 出 JSON | pr-reviewer 编排器**自主**读文件/grep/git diff,多 subagent 并行审 |
+| 跨文件理解 | 弱(只看 diff) | 强(模型能主动翻仓库上下文) |
+| 速度 | 快(~10-30s/PR) | **慢**(多 subagent × 多轮 tool-call,30B 上一个 PR 可能数分钟+) |
+| 稳定性 | 高(纯补全) | 依赖模型 tool-call(Qwen3-Coder ✓,2.5-Coder ✗) |
+| 适合 | **24h 全量 PR 巡审** | **重要/复杂 PR 按需深审** |
+| 入口 | `run.sh` / daemon(`REVIEW_MODE=direct`) | `run-opencode.sh` / daemon(`REVIEW_MODE=opencode`) |
+
+**产品① direct**:`bash run.sh`(24h 守在那审所有 PR)。
+**产品② opencode**(先 `bash scripts/sync-opencode-global.sh` 同步全局配置):
+```bash
+bash run-opencode.sh owner/repo#123     # 深审某 PR(DRY_RUN=1 只打印)
+bash run-opencode.sh                     # 审当前分支 → stdout
+```
+> 经验:opencode 能力强(模型自主探索),但在本地 30B 上**明显慢**——更适合你点名深审重要 PR,而非 24h 全量。两者共用同一套 lens prompts(`prompts/` + `vendor/opencode-review/prompts/`)。
+
 ## 确定性层(可选,免费 GitHub 托管 runner)
 
 `.github/workflows/deterministic.yml`:PR 触发时跑 Semgrep + Slither(Solidity)+ 测试/覆盖率 → 把硬证据(SARIF)给本地 LLM 在其上推理(降误报)。daemon 直评也可读 `--evidence-file`。
