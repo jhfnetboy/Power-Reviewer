@@ -6,7 +6,7 @@
   OMLX_API_KEY=... python3 review/direct_review.py --repo owner/repo --pr 123 [--dry-run]
   python3 review/direct_review.py --diff-file some.diff --dry-run        # 离线测
   --lenses security,testing,docs,consistency   # 默认全开
-  --model omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit
+  --model omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit
 """
 import argparse, json, os, re, subprocess, sys, urllib.request
 
@@ -118,7 +118,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo"); ap.add_argument("--pr", type=int)
     ap.add_argument("--diff-file"); ap.add_argument("--evidence-file")
-    ap.add_argument("--model", default="omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit")
+    ap.add_argument("--model", default="omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit")
     ap.add_argument("--lenses", default="security,testing,docs,consistency")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--note", default="", help="在评论顶部加一行说明(如:测试)")
@@ -169,7 +169,7 @@ def main():
     kept = sorted([f for f in all_f if _kept(f)], key=lambda f: SEV_RANK.get(f.get("severity"), 2))
     inline_pool = [f for f in kept if f.get("severity") in ("critical", "major")][:MAX_INLINE]
 
-    body = ["## 🤖 Power-Reviewer 本地审查 (Qwen2.5-Coder via omlx, 直评模式)\n"]
+    body = [f"## 🤖 Power-Reviewer 本地审查 ({model} via omlx, 直评模式)\n"]
     if a.note:
         body.append(f"> {a.note}\n")
     if truncated:

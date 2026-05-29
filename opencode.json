@@ -49,7 +49,7 @@
     "pr-reviewer": {
       "description": "本地多维度 PR 审查编排器:分诊 → 并行派发 lens → 汇总去重 → 发 inline 评论",
       "mode": "primary",
-      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-reviewer-orchestrator.md}",
       "permission": {
         "read": "allow", "edit": "deny", "bash": "allow",
@@ -61,7 +61,7 @@
     "pr-review-security": {
       "description": "安全 lens:OWASP + Web3/Solidity 智能合约专项(他们的代码大量是 Paymaster/EIP-7702)",
       "mode": "subagent",
-      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
       "prompt": "{file:./prompts/pr-review-security.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -70,7 +70,7 @@
     "pr-review-testing": {
       "description": "测试覆盖 lens:改动是否有配套单测/E2E",
       "mode": "subagent",
-      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-testing.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -88,7 +88,7 @@
     "pr-review-consistency": {
       "description": "代码库一致性 lens:命名/组织/模式是否沿用既有约定",
       "mode": "subagent",
-      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-consistency.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -97,7 +97,7 @@
     "pr-review-design": {
       "description": "[默认关] 设计/方案 lens — 留给升级深审",
       "mode": "subagent",
-      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-design.md}",
       "hidden": true, "disable": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -105,7 +105,7 @@
     "pr-review-solid": {
       "description": "[默认关] SOLID/结构 lens — 留给升级深审",
       "mode": "subagent",
-      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-solid.md}",
       "hidden": true, "disable": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
