@@ -4,14 +4,43 @@
   "//": "Power-Reviewer 适配:本地 Qwen 跑 24h 多维度审查。结构借鉴 vendor/opencode-review,模型改本地。",
   "//escalation": "深审/决策不在此配置自动调订阅(ToS+配额)。用 PR-as-medium:你在 OpenCode/Claude Code 里交互式深挖(见研究文档 §15)。",
 
+  "//backends": "四个后端全是 OpenAI 兼容、懒加载(定义着不连不耗资源)。benchmark 顺序:① ollama → ② lmstudio → ③ omlx。切后端用 scripts/switch-backend.sh,或手改下面各 agent 的 model 前缀。比 tok/s + tool-call 成功率再定。",
+
   "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama (local)",
+      "name": "① Ollama (本地, 默认/先测; 0.19+ Apple Silicon 已用 MLX)",
       "options": { "baseURL": "http://localhost:11434/v1" },
       "models": {
         "qwen2.5-coder:32b": { "name": "Qwen2.5-Coder 32B (主力)" },
         "qwen3:8b": { "name": "Qwen3 8B (轻量)" }
+      }
+    },
+
+    "lmstudio": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "② LM Studio (MLX + GUI, 第2测; 默认端口 1234)",
+      "options": { "baseURL": "http://localhost:1234/v1" },
+      "models": {
+        "qwen2.5-coder-32b-instruct": { "name": "以 LM Studio 里加载的模型名为准" }
+      }
+    },
+
+    "omlx": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "③ oMLX (MLX + 连续批处理 + 分层KV缓存 + 内置tool-call, 第3测/最看好; 端口 8000)",
+      "options": { "baseURL": "http://localhost:8000/v1" },
+      "models": {
+        "Qwen3-Coder-Next-8bit": { "name": "模型名=omlx --model-dir 下的目录名或 alias" }
+      }
+    },
+
+    "llamacpp": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "(备) llama.cpp llama-server (原生 Metal; 默认端口 8080)",
+      "options": { "baseURL": "http://localhost:8080/v1" },
+      "models": {
+        "default": { "name": "llama-server 启动时加载的模型(名字随 -m 参数)" }
       }
     }
   },

@@ -353,6 +353,21 @@ GitHub Actions (PR 触发, 免费)
 
 ---
 
+## 18. 本地推理后端(Mac):Ollama vs MLX,benchmark 顺序
+
+**Ollama 底层(2026)**:Apple Silicon 自 **0.19(2026-03)起换 MLX**(preview,llama.cpp 的 Metal 后端退役),但 **MLX 加速覆盖的模型仍有限**,未覆盖的回退 ggml/llama.cpp;Linux/Windows 仍 llama.cpp。
+**实测梯度**(M4 Pro, Qwen3-Coder-30B-A3B):MLX ~130 tok/s > 原生 llama.cpp Metal ~89 > 旧 Ollama(llama.cpp 后端)~43。⇒ "llama.cpp 比 Ollama 快"的旧建议对**新版 Ollama(MLX)部分失效**。
+
+**四个候选(都 OpenAI 兼容,`opencode.json` 已配,`scripts/switch-backend.sh` 切)**:
+- **Ollama**:最省心;受 `NUM_PARALLEL=1` 约束 → 多 lens 串行。
+- **LM Studio**:MLX + GUI + 模型管理(端口 1234)。
+- **oMLX**([jundot/omlx](https://github.com/jundot/omlx),Apache-2.0,**最看好**):MLX/mlx-lm + **连续批处理**(多 lens 真并行,无需 NUM_PARALLEL=1)+ **内置 tool-call 解析** + 分层 KV 缓存(prefix 复用,专为 Claude Code 类 agent 优化)+ 进程内存上限/LRU/brew services 自动重启(比 Ollama 的 Jetsam LaunchAgent + 串行更优雅)+ OpenCode 一键集成 + 多模型同serving。
+- **llama.cpp `llama-server`**:原生 Metal,最大控制(端口 8080)。
+
+**决策规则**:OpenCode 是 agentic,**tool-call 可靠性 > 最后 15% tok/s**。先 Ollama 跑通 → LM Studio → oMLX,在同一真实 PR 比 tok/s + tool-call 成功率。oMLX 因连续批处理 + 原生 tool-call,理论上对"多 lens 并行 + agentic"最契合。
+
+---
+
 ## 参考来源
 
 - [10 Open Source AI Code Review Tools Tested (2026) — Augment Code](https://www.augmentcode.com/tools/open-source-ai-code-review-tools-worth-trying)
@@ -370,5 +385,6 @@ GitHub Actions (PR 触发, 免费)
 - [OpenCode GitHub PR Review 文档](https://opencode.ai/docs/github/) · [OpenCode Providers（本地/兼容端点）](https://opencode.ai/docs/providers/) · [OpenCode + Ollama（官方集成）](https://docs.ollama.com/integrations/opencode)
 - [cedricwider/opencode-review（多 lens 编排底座）](https://github.com/cedricwider/opencode-review) · [BerriAI/shin-pr-review-agent](https://github.com/BerriAI/shin-pr-review-agent) · [agentuse/pr-review-agent](https://github.com/agentuse/pr-review-agent) · [Nayjest/Gito](https://github.com/Nayjest/Gito)
 - [Using OpenCode in CI/CD for AI PR reviews — Martin Alderson](https://martinalderson.com/posts/using-opencode-in-cicd-for-ai-pull-request-reviews/) · [microsoft/litebox](https://github.com/microsoft/litebox)
+- [Ollama is now powered by MLX on Apple Silicon](https://ollama.com/blog/mlx) · [MLX vs Ollama vs llama.cpp 2026 benchmarks](https://willitrunai.com/blog/mlx-vs-ollama-apple-silicon-benchmarks) · [jundot/oMLX(MLX 推理 + 连续批处理 + 分层KV缓存)](https://github.com/jundot/omlx)
 </content>
 </invoke>

@@ -10,3 +10,12 @@
 6. **本地并发=1** — OpenCode orchestrator 并行 fan-out 多 lens 到同一 Ollama。64GB 上 24GB 模型,`OLLAMA_NUM_PARALLEL=1`(已设)串行执行避免 OOM;吞吐靠排队。默认只启 4 个高价值 lens(security/testing/docs/consistency),design/solid 关掉。
 7. **代理 NO_PROXY** — Clash(7890)会吞掉 `localhost:11434` 请求。`NO_PROXY=localhost,127.0.0.1`(workflow 已设)。这也是 `gh` API 时好时坏的同源问题。
 8. **tool call 不稳就提 num_ctx** — OpenCode 是 agentic、依赖 tool 调用;本地模型 num_ctx 太小会让 tool call 失败,提到 16k–32k。
+
+## 后端选择(benchmark 顺序:Ollama → LM Studio → oMLX)
+
+`opencode.json` 已配好四个 OpenAI 兼容后端,`scripts/switch-backend.sh <name>` 一键切。
+- **Ollama**:最省心;0.19+ Apple Silicon 已用 MLX(但 MLX 加速覆盖的模型有限,没覆盖的回退 llama.cpp 慢档)。受 `OLLAMA_NUM_PARALLEL=1` 约束 → 多 lens 实际串行。
+- **LM Studio**:MLX + GUI + 模型管理;端口 1234。
+- **oMLX(最看好)**:MLX + **连续批处理**(多 lens 真并行,**无需** `NUM_PARALLEL=1`)+ **内置 tool-call 解析**(Qwen/Llama 等)+ **进程内存上限/LRU/brew services 自动重启**(**比坑#3/#6 的 Ollama LaunchAgent+串行 更优雅**)+ OpenCode 一键集成。端口 8000。
+  - 用 oMLX 时:坑#3(Jetsam)和坑#6(并发=1)基本由它的内存守护 + 批处理替代解决;`--max-concurrent-requests` 控制并发,`ProcessMemoryEnforcer` 防 OOM。
+- 选定前在**同一个真实 PR** 上比三者的 tok/s + tool-call 成功率。
