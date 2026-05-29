@@ -1,0 +1,30 @@
+# LiteLLM 代理:对外暴露统一的 OpenAI 兼容端点,review 逻辑只对接这一个端点。
+# 启动:  litellm --config orchestrator/litellm.config.yaml --port 4000
+#
+# ⚠️ 合规红线:此文件【绝不】放 Claude Max / Codex Pro 的 OAuth token。
+#    订阅 token 仅限官方 Claude Code / claude.ai 使用(2026-02 ToS),
+#    放进 LiteLLM = 违反条款。升级大脑请在 run-review.sh 里走官方 `claude -p` / `codex` CLI。
+
+model_list:
+  # ── 24h 主力:本地 Qwen-Coder（先用 dense 32B 跑通,稳） ──
+  - model_name: reviewer-local
+    litellm_params:
+      model: ollama/qwen2.5-coder:32b
+      api_base: http://localhost:11434
+      # 本地小模型上下文窗口有限,大 PR 需在 run-review.sh 里做 token-aware 分块(借鉴 PR-Agent)
+
+  # ── 轻量任务(文档/注释同步检查等),省内存可多实例 ──
+  - model_name: reviewer-light
+    litellm_params:
+      model: ollama/qwen3:8b
+      api_base: http://localhost:11434
+
+  # ── 候选主力(确认 Ollama/MLX 已解决 MoE 利用率后再启用) ──
+  # - model_name: reviewer-local
+  #   litellm_params:
+  #     model: ollama/qwen3-coder:30b
+
+litellm_settings:
+  drop_params: true
+  # 故意不配 fallback 到任何云端 provider —— 本地失败要"大声报错",
+  # 绝不静默上云(规避 PR-Agent 的静默 fallback 坑,保证代码不出网)。

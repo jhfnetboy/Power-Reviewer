@@ -1,0 +1,40 @@
+# LLM 层:OpenCode 多维度审查,跑在你 Mac 的 self-hosted runner(能访问本地 Ollama)。
+# 放进【被审查仓库】的 .github/workflows/。需先用 scripts/setup-opencode.sh 把 opencode.json + 本仓 prompts 装到 runner。
+name: opencode-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # 也支持评论里打 /oc 或 /opencode 手动触发(OpenCode 内置)
+
+permissions:
+  contents: read
+  pull-requests: write     # 发 review 评论需要 write
+
+jobs:
+  review:
+    runs-on: [self-hosted, macos, power-reviewer]   # 你的 Mac;标签见 scripts/register-runner.md
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Download deterministic evidence
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: deterministic-evidence
+          path: ./.evidence
+
+      - name: OpenCode multi-lens review (本地 Qwen)
+        uses: anomalyco/opencode/github@latest
+        env:
+          # 本地模型无需 API key;OpenCode 读仓库根的 opencode.json → ollama 本地 provider
+          NO_PROXY: localhost,127.0.0.1     # 坑#7:别让 Clash 吞掉本地请求
+        with:
+          # TODO: 核对该 action 的真实输入参数(agent/model/prompt)。
+          #   目标:用 opencode.json 里的 primary agent `pr-reviewer` 跑 /review。
+          model: ollama/qwen2.5-coder:32b
+          prompt: |
+            Run the `pr-reviewer` orchestrator to review this pull request.
+            Read any SARIF under ./.evidence first and build on it.
+            Post the synthesized review as an inline PR review. Do not modify code.

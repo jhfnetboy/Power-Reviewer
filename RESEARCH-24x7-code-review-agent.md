@@ -199,6 +199,193 @@ Anthropic 在 2026 年 2 月更新了条款,新增 **Authentication and Credenti
 
 ---
 
+## 9. Kodus 深入(已弃用,概念保留于此节)
+
+> 状态:Kodus 代码已从仓库移除(重型 NestJS 平台,不符合轻量取向)。本节作为"借鉴存档"保留——其 AST 上下文、KodyRules、去重思路的实现已由 OpenCode 多 lens(§17)覆盖。
+
+**定位**:开源(AGPLv3)、可完全自托管的 AI code review 引擎,哲学是 **"AST 确定性分析 + LLM 语义分析 + 自定义规则 = 低噪声"**——正好对上"24h 跑但别刷屏"的核心痛点。
+
+**review 流水线(webhook 进来之后)**:
+```
+GitHub webhook → ① 起 sandbox(默认 local 跑在 worker;或付费 e2b 远程)
+→ ② 构建 AST 图(确定性,非 GPT)读模块依赖
+→ ③ 从工具拉上下文(插件:Jira / CI 日志 / 测试覆盖率)
+→ ④ 多个专门 agent 并行 review(KodyRulesAgent + 安全/质量…)
+→ ⑤ 去重 + 按严重度分级 + 给修改建议
+→ ⑥ 发回 PR 评论
+```
+全程在自己网络/数据库/基础设施里跑,代码不出网。
+
+**组件(Docker 全栈)**:`web` + `api` + `worker` + `webhooks`(独立服务,3332 端口)+ `RabbitMQ` + `Postgres/pgvector` + `MongoDB`。
+
+**对本项目特别有用的亮点**:
+- **KodyRules / Policy-as-Code**:用大白话写规则、可**按文件夹**生效("此目录必须有测试""API 改动必须更新文档")。七项诉求里"文档同步/测试完整/业务一致性"很多可直接编码成规则,不靠模型瞎猜。
+- **自动识别已有规则文件**:能读 Cursor / Copilot / Claude / Windsurf 的 rule 文件。
+- **模型无关**:任意 OpenAI 兼容端点 → 直指本地 Ollama/LiteLLM。
+- **AST 规则引擎给 LLM 喂"精确结构化上下文"**而非整坨 diff,这是降噪的根。
+- 默认只评论不改代码,符合 review-only 诉求。
+- 有 CLI 版 **`kodus-ai-cr`**,适合塞进 CI(见 §11)。
+
+**老实说的 caveat**:
+1. **跨文件能力营销 vs 实测有落差**:官方主打"AST 图 + 跨文件上下文",但独立的 450K 文件 monorepo 评测发现它实际仍偏"单文件孤立审查",跨服务破坏性改动捕捉不如预期。"业务一致性"别指望开箱即用,要靠 KodyRules + pgvector 检索补。
+2. **文档有缺口、星不多(~976★)**:多语言 monorepo 配置文档不全,部分要读源码;非 TS 项目生产效果未充分验证。
+
+## 10. PR-Agent 可借鉴清单(B 方案不采用,但抄设计)
+
+无论最后走 Kodus 还是自研,这些模式都值得抄:
+1. **⭐ "Prompt 即配置,而非代码"**:检查类别/严重度阈值/规则放在 JSON/TOML + prompt 模板里,改行为不改代码、不重新部署。自研一开始就这么设计,迭代快一个量级。
+2. **⭐ Adaptive token-aware patch fitting**:大 PR 装不下窗口时,按 token 预算自适应压缩/分块且保住语义。**本地小模型上下文窗口比云小**,这套策略几乎一定用得上。
+3. **单工具单次 LLM 调用 + self-reflection 自校验**:`/review` 等单次调用(~30s)换速度/成本,加自检步骤降幻觉。24h 追求吞吐时比多轮 agent 划算。
+4. **Provider/平台抽象层**:LLM provider 和 Git 平台都抽象掉 → 对应到用 LiteLLM 做统一端点。
+5. **⚠️ 两个反面教材(主动规避)**:
+   - **静默回退云端**:本地配置有 bug 时(issues #2098/#2083)会悄悄 fallback 到 OpenAI——对"代码不出网"是灾难。**教训:本地优先要显式、失败要大声报错,绝不静默上云。**
+   - **localhost 可达性**:不能用 GitHub 托管 runner 连本机 Ollama。**教训:本地模型的 review 执行必须跑在能访问本地模型的机器上(那台 Mac)。**
+
+## 11. 利用 GitHub 免费算力(重要架构优化)
+
+**核心事实(2026)**:
+- **公开仓库**:GitHub Actions 标准托管 runner **完全免费**;**自托管 runner 也免费**;**CodeQL 代码扫描免费**。
+- **私有仓库**:托管 runner 有按 plan 的免费分钟配额;CodeQL 需 **GHAS(付费)**;自托管 runner 原计划 2026-03 起 $0.002/min(已推迟、重新评估中)。
+
+**⭐ 关键洞察:把 GitHub Actions 当"编排 + webhook + 确定性算力"层,把那台 Mac 注册成 self-hosted runner 跑本地模型。** 这样:
+- **省掉自建 webhook/隧道**:Actions 原生就是触发器,不必为触发去搭 Kodus 的 RabbitMQ/Postgres 全栈,也不必 Cloudflare Tunnel。
+- **解决 localhost 可达性**(§10 的坑):本地模型 job 直接派发到你 Mac 上的 self-hosted runner。
+- **确定性层白嫖免费托管 runner**:Semgrep / CodeQL(公开仓库)/ lint / 测试 / 覆盖率 diff 跑在免费 GitHub 托管 runner 上;只有"本地 LLM review"这一步派给 Mac。
+
+**因此推荐的混合编排**:
+```
+GitHub Actions (PR 触发, 免费)
+├─ job A (github-hosted, 免费): Semgrep + CodeQL(公开仓) + lint + test + coverage diff
+│        └─ 把硬证据(SARIF/覆盖率)作为 artifact 传给 job B
+└─ job B (self-hosted = 你的 Mac): 本地 Qwen-Coder 在硬证据基础上做语义 review
+         └─ 复杂/安全关键时,经官方 CLI 升级到订阅大脑(限流)
+         └─ gh pr comment / review API 发回评论
+```
+- **建议主力仓库尽量用公开仓**(若可能):Actions + 自托管 runner + CodeQL 全免费。
+- **私有仓库**:用 Semgrep OSS 替代 CodeQL(免费、自托管),自托管 runner 计费变动留意官方最新口径。
+- 可直接在 job B 里跑 **`kodus-ai-cr` CLI**,省掉 Kodus 整套 Docker 栈。
+
+## 12. Fork 策略与仓库结构(待定,见正文问题)
+
+现状:`Power-Reviewer` 已是 git 仓库,`origin = github.com/jhfnetboy/Power-Reviewer`。
+诉求:fork Kodus 作为上游,在其上加自己的 feature;Power-Reviewer 同时保留自己的 origin。
+
+三种结构(详见对话):
+- **结构①(推荐)两仓 + submodule**:Power-Reviewer 当"大脑/编排 + Actions + 自定义 feature";另 fork Kodus 为独立仓(`upstream=kodustech/kodus-ai`),以 submodule 挂进 `vendor/kodus`。升级上游干净,AGPL 边界清晰,feature 不与 Kodus monorepo 纠缠。
+- **结构② 单仓即 Kodus fork**:Power-Reviewer 本身 = Kodus fork(`origin=自己`,`upstream=Kodus`,`merge --allow-unrelated-histories`)。可深度改 Kodus 内部,但合并维护痛、AGPL 覆盖整库。
+- **结构③ 多 remote 仅参考**:`origin` + `upstream-kodus` + `upstream-pragent` 只读,cherry-pick/参考,不整树合并。最轻,适合"借鉴为主"。
+
+> ⚠️ 阻塞项:`gh` 当前 token 失效 + 代理(127.0.0.1:7890)connection reset,需先 `gh auth login` 才能真正在 GitHub fork。
+
+---
+
+## 13. 本地模型能力边界(27B dense vs MoE)与典型场景
+
+**架构定调**:不运行 Kodus 重型平台,改用轻量自研 agent(Flask+RQ+LangGraph+Ollama),Kodus 降为参考源。理由:省资源、全控制,契合"本地免费 token 24h 跑"的取向。`vendor/kodus` 留作借鉴(AST 上下文、KodyRules 格式、去重)。
+
+### 27B dense(Qwen2.5-Coder-32B)启动后的典型场景(按擅长度排序)
+上下文有限 → 只做**边界清晰、局部**的任务:
+1. **Diff 级 review**(PR 改动本身,天然有界)—— 主力场景
+2. **单文件安全模式扫描**(注入、硬编码密钥、危险 API);Web3 项目配合 Slither/Semgrep 给硬证据
+3. **文档/注释同步检查**(签名改了文档没改)—— 可派给 8B 并行
+4. **测试完备性**(改了代码有没有配套测试)—— 配合覆盖率 diff
+5. **明显 bug / 代码异味 / lint 级问题**
+6. **commit message / PR 描述质量**
+
+❌ **放弃业务一致性**:需跨文件/全仓上下文,超 27B 窗口能力,交给升级大脑。
+
+### 切 MoE(如 Qwen3-Coder-30B-A3B)能力会涨吗?
+- **主要收益是速度/吞吐**(3B 激活),**不等于上下文变大**。质量同档,审得更快、24h 能审更多 PR。
+- **能力范围扩展的真正来源是"上下文长度 + 推理力",不是 MoE 本身**:
+  - 换**长上下文模型**(或 Qwen3-Coder-Next 80B-A3B)→ 才谈得上跨文件/多文件推理 → 业务一致性才部分可行
+  - 否则跨文件/决策性的活,仍应**升级到 Claude/Codex**
+- 结论:MoE 让你"更快更多",长上下文/云端大脑才让你"更深"。别指望换 MoE 就解锁业务一致性。
+
+## 14. litebox 不适用(已查证)
+
+[microsoft/litebox](https://github.com/microsoft/litebox) 是 **Rust 写的安全沙箱 library OS**(跑单个进程、收窄host接口),**不是容器/镜像运行时**,无法运行 Kodus 的多服务 docker-compose 栈;且尚在早期、API 不稳。
+- **真正的省资源做法不是 litebox,而是根本不跑 Kodus 平台**——用轻量自研 agent(纯 Python+Ollama,顶多加个 Redis),无需 Docker。
+- 沙箱隔离当前不需要:Semgrep/CodeQL 不执行代码,self-hosted runner/本机已够隔离。将来若要在 review 中执行不可信代码,再评估 litebox/e2b。
+
+## 15. 升级/决策的最佳实践:GitHub PR 作为人机媒介(强烈推荐)
+
+两种把"大上下文/决策"接进来的方式:
+- **(A) 工具内置自动调用 Claude/Codex**:ToS 灰色(订阅被自动化调用)、烧周配额、难审计。**仅作罕见、限流的升级用**,且必须走官方 CLI。
+- **(B) ⭐ GitHub PR 作为媒介(推荐默认)**:本地 bot 把发现作为 PR 评论/review 贴出;**你在 Claude Code/Codex 里交互式打开 PR、读评论、对存疑项深挖与决策**。异步、可审计、人在环、**完全合规**(你本人交互式使用订阅)、不烧自动化配额、留存记录。
+
+**完整 PR 生命周期(最佳实践)**:
+```
+1. 你/同事开 PR
+2. [免费 GitHub Actions] Semgrep/CodeQL/test/coverage → 硬证据(SARIF)
+3. [本地 24h bot] Qwen 在硬证据上 review → 结构化评论贴回 PR,分级
+      - 局部问题(安全/文档/测试/bug):直接给可操作建议
+      - 跨文件/业务/决策性:标 `needs-human-brain` 标签,只提问不下结论
+4. [你,按自己节奏] 在 Claude Code / Codex 打开 PR:
+      - 扫一遍 bot 的分级评论(秒级决定 merge / 改 / 忽略)
+      - 对 `needs-human-brain` 项,用 Claude/Codex 交互式深挖 + 决定 + 让它改
+5. merge
+```
+要点:**bot 做分诊(triage),你+大模型做判断(judgment)**——这是 2026 主流的人机分工。可选中间档:对极少数高价值 PR,本地 bot 经官方 `claude -p` 自动升级,但设日配额硬上限(见 §1)。
+
+## 16. 两种能力:被动 PR review + 主动代码库扫描
+
+不止跟踪已有 PR,还要能**主动扫描代码库**给质量/安全/性能评估:
+- **被动(事件驱动)**:webhook,PR 来了就审(本仓 `agent/`)。
+- **主动(定时扫描)**:`on: schedule`(GitHub Actions cron)或本地 cron,定期对全仓/指定目录跑一遍,产出报告或开 issue。无需手动维护 clone(Actions 自动签出;本地扫描则指向已 clone 目录)。
+
+---
+
+## 17. 底座决策:OpenCode + 多 lens(路线乙,已采纳)
+
+调研轻量可 fork 方案后(PR-Agent / shin-pr-review-agent / agentuse / Gito / OpenCode),采纳 **OpenCode + opencode-review 多 lens 编排**:
+
+- **为什么不从零写**:`agent/`(Flask+RQ+LangGraph)能跑但不成熟;站在成熟工具上更省力。已归档到 `archive/flask-agent/` 作 fallback。
+- **为什么不是 PR-Agent(B)**:Qodo 已弃为 legacy;本地模型有静默回退 OpenAI 的 bug(#2098/#2083 4+月未修),对"代码不出网"致命。
+- **为什么 OpenCode**:provider-agnostic agent 运行时(类 Claude Code),**同一工具本地跑 24h、切订阅做深审**;`opencode-review` 已实现 orchestrator + 5 lens 并行 fan-out + 结构化 JSON + 自动 inline 评论(连行号校验/422 恢复都做好);可跑在 GitHub runner(免费算力)。
+
+**本仓适配**(`opencode.json`):
+- provider 改 **ollama 本地**(`@ai-sdk/openai-compatible` → `localhost:11434/v1`),模型 Qwen2.5-Coder-32B / Qwen3-8B。
+- lens:security(**OWASP + Web3/Paymaster/EIP-7702 专项**,本仓自定义)、testing、**docs(本仓自加,补第7项诉求)**、consistency 默认启用;design/solid 默认关(本地 27B 较吃力 + 串行慢),留升级深审。
+- 本地并发=1(`OLLAMA_NUM_PARALLEL=1`),orchestrator 并行 fan-out 实际在 Ollama 排队,避免 OOM。
+- `vendor/opencode-review` 作参考 submodule:复用标准 lens prompts 与 gh-pr-review skill;无 LICENSE,故不拷贝进本仓,运行时按路径引用。
+
+**升级深审仍走 PR-as-medium(§15)**,不在配置里自动调订阅。
+
+---
+
+## 18. 本地推理后端(Mac):Ollama vs MLX,benchmark 顺序
+
+**Ollama 底层(2026)**:Apple Silicon 自 **0.19(2026-03)起换 MLX**(preview,llama.cpp 的 Metal 后端退役),但 **MLX 加速覆盖的模型仍有限**,未覆盖的回退 ggml/llama.cpp;Linux/Windows 仍 llama.cpp。
+**实测梯度**(M4 Pro, Qwen3-Coder-30B-A3B):MLX ~130 tok/s > 原生 llama.cpp Metal ~89 > 旧 Ollama(llama.cpp 后端)~43。⇒ "llama.cpp 比 Ollama 快"的旧建议对**新版 Ollama(MLX)部分失效**。
+
+**四个候选(都 OpenAI 兼容,`opencode.json` 已配,`scripts/switch-backend.sh` 切)**:
+- **Ollama**:最省心;受 `NUM_PARALLEL=1` 约束 → 多 lens 串行。
+- **LM Studio**:MLX + GUI + 模型管理(端口 1234)。
+- **oMLX**([jundot/omlx](https://github.com/jundot/omlx),Apache-2.0,**最看好**):MLX/mlx-lm + **连续批处理**(多 lens 真并行,无需 NUM_PARALLEL=1)+ **内置 tool-call 解析** + 分层 KV 缓存(prefix 复用,专为 Claude Code 类 agent 优化)+ 进程内存上限/LRU/brew services 自动重启(比 Ollama 的 Jetsam LaunchAgent + 串行更优雅)+ OpenCode 一键集成 + 多模型同serving。
+- **llama.cpp `llama-server`**:原生 Metal,最大控制(端口 8080)。
+
+**决策规则**:OpenCode 是 agentic,**tool-call 可靠性 > 最后 15% tok/s**。先 Ollama 跑通 → LM Studio → oMLX,在同一真实 PR 比 tok/s + tool-call 成功率。oMLX 因连续批处理 + 原生 tool-call,理论上对"多 lens 并行 + agentic"最契合。
+
+---
+
+## 19. 常驻 24h 助手架构(跨 org · 轮询 · 优先级)
+
+诉求升级:不只审单仓 PR,而是**常驻后台、跨 3 个 org(AAStarCommunity/AuraAIHQ/MushroomDAO)**持续保障代码质量。已装:`omlx`/`opencode`/`claude`/`codex`/`gh`/`prbot`(未装 ollama/lms,无需)。
+
+**为什么轮询(daemon)而非纯 webhook**:你 review 的很多是**别人 org 的 PR**,你没那些仓的 Actions 权限;但 `gh search` 用你自己身份在哪都能查。故发现层用轮询(`daemon/discover.sh`,镜像 prbot 查询);**自有仓**可另加 Actions 降延迟,两者并存。
+
+**优先级**:
+- **P0**(立即):别人请我 review 的 PR + 我自己的 open PR。
+- **P1**(预留):活跃仓新 push。
+- **P2**(长线、空闲填充):整仓文档完整性/一致性、代码质量评估;枚举 3 org 近 90 天活跃仓轮转推进(实测 AAStar 单 org 28 个活跃仓)。
+
+**去重**:按 PR head SHA 记 `seen.tsv`,同 commit 不重审,防刷屏。
+**只评论不改代码**;**升级深审**走官方 `claude -p`/`codex` CLI(合规)、按 `ESCALATE_DAILY_CAP` 限流、仅高价值 PR;默认仍优先 PR-as-medium(§15)。codex 用 CLI 非 MCP(全局已禁 MCP)。
+
+**实现状态**:`discover.sh` 发现层已验证可跑(P2 枚举实测正常;P0 仅受代理 7890 偶发 reset 影响,已加 3 次重试)。`review_pr`/`escalate_pr`/P2 巡检为待填骨架。
+
+---
+
 ## 参考来源
 
 - [10 Open Source AI Code Review Tools Tested (2026) — Augment Code](https://www.augmentcode.com/tools/open-source-ai-code-review-tools-worth-trying)
@@ -210,5 +397,12 @@ Anthropic 在 2026 年 2 月更新了条款,新增 **Authentication and Credenti
 - [Smart Orchestrator + Cheaper Sub-Agents — MindStudio](https://www.mindstudio.ai/blog/smart-orchestrator-cheaper-sub-agent-models-claude-code) · [The Code Agent Orchestra — Addy Osmani](https://addyosmani.com/blog/code-agent-orchestra/)
 - [Semgrep + LLM 降误报 — Medium](https://medium.com/@adan.alvarez/diy-using-semgrep-with-llms-to-improve-code-reviews-d43d0584b34f) · [Semgrep AI-Powered Detection (IDOR)](https://semgrep.dev/blog/2025/ai-powered-detection-with-semgrep/) · [LLM 后置过滤静态分析误报（arXiv）](https://arxiv.org/pdf/2511.04023)
 - [Claude Code Headless 自托管指南](https://amux.io/guides/claude-code-headless/) · [Max 计划 OAuth vs API Key（2026）](https://lalatenduswain.medium.com/claude-code-on-claude-max-plan-understanding-oauth-token-vs-api-key-authentication-in-2026-96a6213d2cde) · [误走 API 计费 $1800 事故 issue](https://github.com/anthropics/claude-code/issues/37686)
+- [Kodus Policy-as-Code Review](https://kodus.io/policy-as-code-review/) · [Show HN: Kodus（AST + LLM, less noise）](https://news.ycombinator.com/item?id=43572816) · [Kodus CR CLI](https://github.com/kodustech/kodus-ai-cr)
+- [GitHub Actions Billing & Usage](https://docs.github.com/en/actions/concepts/billing-and-usage) · [Actions 定价变更（2026）](https://resources.github.com/actions/2026-pricing-changes-for-github-actions/) · [自托管 runner 计费推迟](https://devclass.com/2025/12/17/github-to-charge-for-self-hosted-runners-from-march-2026/)
+- [About GitHub Advanced Security（CodeQL 私有仓需 GHAS）](https://docs.github.com/en/get-started/learning-about-github/about-github-advanced-security) · [About code scanning with CodeQL](https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning-with-codeql)
+- [OpenCode GitHub PR Review 文档](https://opencode.ai/docs/github/) · [OpenCode Providers（本地/兼容端点）](https://opencode.ai/docs/providers/) · [OpenCode + Ollama（官方集成）](https://docs.ollama.com/integrations/opencode)
+- [cedricwider/opencode-review（多 lens 编排底座）](https://github.com/cedricwider/opencode-review) · [BerriAI/shin-pr-review-agent](https://github.com/BerriAI/shin-pr-review-agent) · [agentuse/pr-review-agent](https://github.com/agentuse/pr-review-agent) · [Nayjest/Gito](https://github.com/Nayjest/Gito)
+- [Using OpenCode in CI/CD for AI PR reviews — Martin Alderson](https://martinalderson.com/posts/using-opencode-in-cicd-for-ai-pull-request-reviews/) · [microsoft/litebox](https://github.com/microsoft/litebox)
+- [Ollama is now powered by MLX on Apple Silicon](https://ollama.com/blog/mlx) · [MLX vs Ollama vs llama.cpp 2026 benchmarks](https://willitrunai.com/blog/mlx-vs-ollama-apple-silicon-benchmarks) · [jundot/oMLX(MLX 推理 + 连续批处理 + 分层KV缓存)](https://github.com/jundot/omlx)
 </content>
 </invoke>
