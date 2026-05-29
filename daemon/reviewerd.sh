@@ -21,14 +21,11 @@ esc_count(){ [[ -f "$ESC_LOG" ]] && wc -l < "$ESC_LOG" | tr -d ' ' || echo 0; }
 # 本地多维度审查(只评论,绝不改代码)
 review_pr(){ # repo num
   local repo="$1" num="$2"
-  log "  → opencode 本地审查 $repo#$num"
-  # TODO(待验证 opencode headless 用法):在目标仓上下文跑 pr-reviewer。
-  #   方案:浅 clone 到临时目录 → opencode run --agent "$OPENCODE_AGENT"。
-  #   tmp="$(mktemp -d)"; gh repo clone "$repo" "$tmp" -- --depth 50 >/dev/null 2>&1
-  #   ( cd "$tmp" && gh pr checkout "$num" >/dev/null 2>&1 \
-  #       && opencode run --agent "$OPENCODE_AGENT" "Review PR #$num against base. Post inline review. Do NOT edit code." )
-  #   rm -rf "$tmp"
-  return 0
+  log "  → 直评 $repo#$num (Qwen2.5-Coder via omlx, 非agentic)"
+  # 路径2:直评。不用 opencode agentic(本地模型 tool-call omlx 解析不了),纯 chat completion。
+  OMLX_API_KEY="${OMLX_API_KEY:-}" OMLX_BASE="${OMLX_BASE:-http://localhost:8088/v1}" \
+    python3 "$REPO_ROOT/review/direct_review.py" --repo "$repo" --pr "$num" \
+      --model "$REVIEW_MODEL" --lenses "$REVIEW_LENSES" ${DRY_RUN:+--dry-run}
 }
 
 # 升级深审:仅高价值/被本地标 critical 的 PR,且当日未超配额。官方 CLI,合规。
