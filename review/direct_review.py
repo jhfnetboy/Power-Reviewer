@@ -13,6 +13,11 @@ import argparse, json, os, re, subprocess, sys, urllib.request
 OMLX_BASE = os.environ.get("OMLX_BASE", "http://localhost:8088/v1")
 OMLX_KEY  = os.environ.get("OMLX_API_KEY", "")
 MAX_DIFF_CHARS = int(os.environ.get("MAX_DIFF_CHARS", "40000"))  # 本地上下文有限,先粗暴截断(TODO:按 token 分块)
+MAX_INLINE = int(os.environ.get("MAX_INLINE", "10"))  # 每个 PR 最多发几条 inline(降噪,防刷屏)
+SEV_RANK = {"critical": 0, "major": 1, "minor": 2, "nit": 3}
+# 生成/机械文件:这些上的非 critical 问题基本是噪声(ABI/lock/min/生成目录),docs/consistency 尤其爱在这刷屏
+SKIP_PATHS = re.compile(r"(\.abi\.json|/abi/|abi\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|"
+                        r"\.min\.|/generated/|/dist/|/build/|/vendor/|\.lock$|\.svg$|\.snap$)", re.I)
 
 # 每个 lens:聚焦点 + 严重度指引。security 含 Web3 专项。输出统一 JSON schema。
 LENSES = {
@@ -116,6 +121,7 @@ def main():
     ap.add_argument("--model", default="omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit")
     ap.add_argument("--lenses", default="security,testing,docs,consistency")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--note", default="", help="在评论顶部加一行说明(如:测试)")
     a = ap.parse_args()
     model = a.model.split("/", 1)[-1]  # omlx 端只要模型名
 
@@ -156,15 +162,25 @@ def main():
                 hit["lens"] += "+" + f["lens"]
             continue
         all_f.append({**f, "_sig": s})
+    # ── 降噪(C):① 机械/生成文件上的非 critical 丢弃 ② 按严重度排序 ③ inline 只发 major+ 且封顶 MAX_INLINE ──
+    def _kept(f):
+        return not (f.get("path") and SKIP_PATHS.search(f["path"]) and f.get("severity") != "critical")
+    dropped_noise = [f for f in all_f if not _kept(f)]
+    kept = sorted([f for f in all_f if _kept(f)], key=lambda f: SEV_RANK.get(f.get("severity"), 2))
+    inline_pool = [f for f in kept if f.get("severity") in ("critical", "major")][:MAX_INLINE]
+
     body = ["## 🤖 Power-Reviewer 本地审查 (Qwen2.5-Coder via omlx, 直评模式)\n"]
+    if a.note:
+        body.append(f"> {a.note}\n")
     if truncated:
         body.append("> ⚠️ diff 过大已截断,仅审查前部分(TODO: token 分块)。\n")
     for r in reports:
         body.append(f"- **{r['lens']}**: {r.get('verdict','?')} — {r.get('summary','').strip()}")
-    body.append("\n### Findings")
-    if not all_f:
+    note = f"({len(kept)} 条" + (f";已过滤 {len(dropped_noise)} 条生成/机械文件噪声" if dropped_noise else "") + ")"
+    body.append(f"\n### Findings {note}")
+    if not kept:
         body.append("未发现高置信度问题 ✅")
-    for f in all_f:
+    for f in kept:
         loc = f.get("path", "?") + (f":{f['line']}" if f.get("line") else "")
         body.append(f"- **[{f.get('severity','?')}|{f['lens']}]** `{loc}` — {f.get('description','')}\n"
                     f"  - 建议: {f.get('suggestion','')}")
@@ -172,12 +188,13 @@ def main():
 
     if a.dry_run or not (a.repo and a.pr):
         print("\n" + "=" * 60 + "\n" + review_body)
+        print(f"\n[降噪] 保留 {len(kept)} 条 | inline {len(inline_pool)}/{MAX_INLINE} | 过滤噪声 {len(dropped_noise)}")
         return
 
-    # 发 inline review(行号在 diff 内的走 inline,其余留 body)。event=COMMENT(只评论,不批准/打回)。
+    # 发 inline review:只发 inline_pool(major+, 封顶)且行号在 diff 内的;其余在汇总 body 里。event=COMMENT。
     valid = valid_diff_lines(diff)
     comments = []
-    for f in all_f:
+    for f in inline_pool:
         p, l = f.get("path"), f.get("line")
         if p and l and l in valid.get(p, set()):
             comments.append({"path": p, "line": l, "side": "RIGHT",
@@ -188,7 +205,7 @@ def main():
                            f"/repos/{a.repo}/pulls/{a.pr}/reviews", "--input", "-"],
                           input=json.dumps(payload), capture_output=True, text=True)
     if proc.returncode == 0:
-        print(f"\n✅ 已发评论到 {a.repo}#{a.pr}({len(comments)} 条 inline + 汇总)")
+        print(f"\n✅ 已发评论到 {a.repo}#{a.pr}({len(comments)} 条 inline + 汇总,过滤噪声 {len(dropped_noise)})")
     else:
         print(f"\n⚠️ 发评论失败(可能 422 行号越界): {proc.stderr[:300]}\n回退:请看 body-only。")
 
