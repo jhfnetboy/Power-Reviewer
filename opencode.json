@@ -1,11 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
 
-  "//": "Power-Reviewer 适配:本地 Qwen 跑 24h 多维度审查。结构借鉴 vendor/opencode-review,模型改本地。",
-  "//escalation": "深审/决策不在此配置自动调订阅(ToS+配额)。用 PR-as-medium:你在 OpenCode/Claude Code 里交互式深挖(见研究文档 §15)。",
-
-  "//backends": "当前默认 omlx(你唯一已装、且最适合:MLX+连续批处理+内置tool-call)。另配了 ollama/lmstudio/llamacpp 备用(都 OpenAI 兼容、懒加载)。想横向对比再装 ollama/lms,用 scripts/switch-backend.sh 切。注意:omlx 模型名需对上你 --model-dir 里实际加载的(现填 Qwen3-Coder-Next-8bit)。",
-
   "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
@@ -28,10 +23,15 @@
 
     "omlx": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "③ oMLX (MLX + 连续批处理 + 分层KV缓存 + 内置tool-call, 第3测/最看好; 端口 8000)",
-      "options": { "baseURL": "http://localhost:8000/v1" },
+      "name": "oMLX (MLX + 连续批处理 + 内置tool-call; 默认后端; 端口 8088)",
+      "options": {
+        "baseURL": "http://localhost:8088/v1",
+        "apiKey": "{env:OMLX_API_KEY}"
+      },
       "models": {
-        "Qwen3-Coder-Next-8bit": { "name": "模型名=omlx --model-dir 下的目录名或 alias" }
+        "Qwen2.5-Coder-32B-Instruct-MLX-8bit": { "name": "Qwen2.5-Coder 32B 8bit (主力)" },
+        "Qwen3-Coder-30B-A3B-Instruct-MLX-8bit": { "name": "Qwen3-Coder 30B-A3B MoE (备选,更快)" },
+        "Qwen3-8B-4bit": { "name": "Qwen3 8B (轻量, docs lens)" }
       }
     },
 
@@ -49,7 +49,7 @@
     "pr-reviewer": {
       "description": "本地多维度 PR 审查编排器:分诊 → 并行派发 lens → 汇总去重 → 发 inline 评论",
       "mode": "primary",
-      "model": "omlx/Qwen3-Coder-Next-8bit",
+      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-reviewer-orchestrator.md}",
       "permission": {
         "read": "allow", "edit": "deny", "bash": "allow",
@@ -61,7 +61,7 @@
     "pr-review-security": {
       "description": "安全 lens:OWASP + Web3/Solidity 智能合约专项(他们的代码大量是 Paymaster/EIP-7702)",
       "mode": "subagent",
-      "model": "omlx/Qwen3-Coder-Next-8bit",
+      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
       "prompt": "{file:./prompts/pr-review-security.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -70,7 +70,7 @@
     "pr-review-testing": {
       "description": "测试覆盖 lens:改动是否有配套单测/E2E",
       "mode": "subagent",
-      "model": "omlx/Qwen3-Coder-Next-8bit",
+      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-testing.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -79,7 +79,7 @@
     "pr-review-docs": {
       "description": "文档/注释同步 lens(本仓自加,覆盖第7项诉求)",
       "mode": "subagent",
-      "model": "omlx/Qwen3-Coder-Next-8bit",
+      "model": "omlx/Qwen3-8B-4bit",
       "prompt": "{file:./prompts/pr-review-docs.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -88,17 +88,16 @@
     "pr-review-consistency": {
       "description": "代码库一致性 lens:命名/组织/模式是否沿用既有约定",
       "mode": "subagent",
-      "model": "omlx/Qwen3-Coder-Next-8bit",
+      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-consistency.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
     },
 
-    "//design+solid": "design / solid 两个 lens 偏资深架构判断,本地 27B 较吃力且 24GB 模型多 lens 串行慢。默认不启用,留给升级深审(你在 OpenCode 里手动跑、或切订阅)。需要时取消下面注释并 npm 模型换强一点的。",
     "pr-review-design": {
       "description": "[默认关] 设计/方案 lens — 留给升级深审",
       "mode": "subagent",
-      "model": "omlx/Qwen3-Coder-Next-8bit",
+      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-design.md}",
       "hidden": true, "disable": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -106,7 +105,7 @@
     "pr-review-solid": {
       "description": "[默认关] SOLID/结构 lens — 留给升级深审",
       "mode": "subagent",
-      "model": "omlx/Qwen3-Coder-Next-8bit",
+      "model": "omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-solid.md}",
       "hidden": true, "disable": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }

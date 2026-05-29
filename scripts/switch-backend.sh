@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 case "${1:-}" in
   ollama)   MODEL="ollama/qwen2.5-coder:32b" ;;
   lmstudio) MODEL="lmstudio/qwen2.5-coder-32b-instruct" ;;       # 改成 LM Studio 实际加载的模型名
-  omlx)     MODEL="omlx/Qwen3-Coder-Next-8bit" ;;                # 改成 omlx --model-dir 下的目录名/alias
+  omlx)     MODEL="omlx/Qwen2.5-Coder-32B-Instruct-MLX-8bit" ;;                # 改成 omlx --model-dir 下的目录名/alias
   llamacpp) MODEL="llamacpp/default" ;;                          # 改成 llama-server 加载的模型名
   *) echo "用法: $0 <ollama|lmstudio|omlx|llamacpp>"; exit 1 ;;
 esac
