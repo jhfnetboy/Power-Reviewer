@@ -4,7 +4,7 @@
   "//": "Power-Reviewer 适配:本地 Qwen 跑 24h 多维度审查。结构借鉴 vendor/opencode-review,模型改本地。",
   "//escalation": "深审/决策不在此配置自动调订阅(ToS+配额)。用 PR-as-medium:你在 OpenCode/Claude Code 里交互式深挖(见研究文档 §15)。",
 
-  "//backends": "四个后端全是 OpenAI 兼容、懒加载(定义着不连不耗资源)。benchmark 顺序:① ollama → ② lmstudio → ③ omlx。切后端用 scripts/switch-backend.sh,或手改下面各 agent 的 model 前缀。比 tok/s + tool-call 成功率再定。",
+  "//backends": "当前默认 omlx(你唯一已装、且最适合:MLX+连续批处理+内置tool-call)。另配了 ollama/lmstudio/llamacpp 备用(都 OpenAI 兼容、懒加载)。想横向对比再装 ollama/lms,用 scripts/switch-backend.sh 切。注意:omlx 模型名需对上你 --model-dir 里实际加载的(现填 Qwen3-Coder-Next-8bit)。",
 
   "provider": {
     "ollama": {
@@ -49,7 +49,7 @@
     "pr-reviewer": {
       "description": "本地多维度 PR 审查编排器:分诊 → 并行派发 lens → 汇总去重 → 发 inline 评论",
       "mode": "primary",
-      "model": "ollama/qwen2.5-coder:32b",
+      "model": "omlx/Qwen3-Coder-Next-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-reviewer-orchestrator.md}",
       "permission": {
         "read": "allow", "edit": "deny", "bash": "allow",
@@ -61,7 +61,7 @@
     "pr-review-security": {
       "description": "安全 lens:OWASP + Web3/Solidity 智能合约专项(他们的代码大量是 Paymaster/EIP-7702)",
       "mode": "subagent",
-      "model": "ollama/qwen2.5-coder:32b",
+      "model": "omlx/Qwen3-Coder-Next-8bit",
       "prompt": "{file:./prompts/pr-review-security.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -70,7 +70,7 @@
     "pr-review-testing": {
       "description": "测试覆盖 lens:改动是否有配套单测/E2E",
       "mode": "subagent",
-      "model": "ollama/qwen2.5-coder:32b",
+      "model": "omlx/Qwen3-Coder-Next-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-testing.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -79,7 +79,7 @@
     "pr-review-docs": {
       "description": "文档/注释同步 lens(本仓自加,覆盖第7项诉求)",
       "mode": "subagent",
-      "model": "ollama/qwen3:8b",
+      "model": "omlx/Qwen3-Coder-Next-8bit",
       "prompt": "{file:./prompts/pr-review-docs.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -88,7 +88,7 @@
     "pr-review-consistency": {
       "description": "代码库一致性 lens:命名/组织/模式是否沿用既有约定",
       "mode": "subagent",
-      "model": "ollama/qwen2.5-coder:32b",
+      "model": "omlx/Qwen3-Coder-Next-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-consistency.md}",
       "hidden": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -98,7 +98,7 @@
     "pr-review-design": {
       "description": "[默认关] 设计/方案 lens — 留给升级深审",
       "mode": "subagent",
-      "model": "ollama/qwen2.5-coder:32b",
+      "model": "omlx/Qwen3-Coder-Next-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-design.md}",
       "hidden": true, "disable": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
@@ -106,7 +106,7 @@
     "pr-review-solid": {
       "description": "[默认关] SOLID/结构 lens — 留给升级深审",
       "mode": "subagent",
-      "model": "ollama/qwen2.5-coder:32b",
+      "model": "omlx/Qwen3-Coder-Next-8bit",
       "prompt": "{file:./vendor/opencode-review/prompts/pr-review-solid.md}",
       "hidden": true, "disable": true,
       "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }

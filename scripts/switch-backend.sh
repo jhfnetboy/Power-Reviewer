@@ -14,7 +14,7 @@ case "${1:-}" in
 esac
 
 # 只替换 agent 定义里的 "model": "..."(provider 段用的是 "models" 复数 + 模型名做 key,不会被命中)
-perl -0pi -e "s/\"model\":\s*\"[^\"]*\"/\"model\": \"$MODEL\"/g" opencode.json
+perl -0pi -e "s#\"model\":\s*\"[^\"]*\"#\"model\": \"$MODEL\"#g" opencode.json
 
 echo "✅ 所有 agent 已切到: $MODEL"
 echo "   benchmark 时统一用一个模型即可;想恢复 docs lens 用 8B 等差异化设置:git checkout opencode.json"

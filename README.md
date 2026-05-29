@@ -39,6 +39,7 @@
 | `deploy/com.power-reviewer.ollama.plist` | Ollama 常驻(Jetsam 自重启 + 串行,坑#3/#6) |
 | `scripts/setup-opencode.sh` | 一键装齐(子模块/模型/常驻) |
 | `scripts/switch-backend.sh` | 一键切本地后端 benchmark:`ollama`/`lmstudio`/`omlx`/`llamacpp` |
+| `daemon/` | **常驻 24h 调度器**:跨 3 个 org 发现 PR(prbot 同款 gh 查询)→ 按优先级派 OpenCode 审 → 只评论;含背景文档/质量巡检(长线) |
 | `scripts/register-runner.md` | Mac 注册 self-hosted runner |
 | `docs/GOTCHAS.md` | 7 个部署必读坑点 |
 | `vendor/opencode-review` | 参考底座(submodule),复用其标准 lens prompts + gh-pr-review skill |

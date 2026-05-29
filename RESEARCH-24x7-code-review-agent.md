@@ -368,6 +368,24 @@ GitHub Actions (PR 触发, 免费)
 
 ---
 
+## 19. 常驻 24h 助手架构(跨 org · 轮询 · 优先级)
+
+诉求升级:不只审单仓 PR,而是**常驻后台、跨 3 个 org(AAStarCommunity/AuraAIHQ/MushroomDAO)**持续保障代码质量。已装:`omlx`/`opencode`/`claude`/`codex`/`gh`/`prbot`(未装 ollama/lms,无需)。
+
+**为什么轮询(daemon)而非纯 webhook**:你 review 的很多是**别人 org 的 PR**,你没那些仓的 Actions 权限;但 `gh search` 用你自己身份在哪都能查。故发现层用轮询(`daemon/discover.sh`,镜像 prbot 查询);**自有仓**可另加 Actions 降延迟,两者并存。
+
+**优先级**:
+- **P0**(立即):别人请我 review 的 PR + 我自己的 open PR。
+- **P1**(预留):活跃仓新 push。
+- **P2**(长线、空闲填充):整仓文档完整性/一致性、代码质量评估;枚举 3 org 近 90 天活跃仓轮转推进(实测 AAStar 单 org 28 个活跃仓)。
+
+**去重**:按 PR head SHA 记 `seen.tsv`,同 commit 不重审,防刷屏。
+**只评论不改代码**;**升级深审**走官方 `claude -p`/`codex` CLI(合规)、按 `ESCALATE_DAILY_CAP` 限流、仅高价值 PR;默认仍优先 PR-as-medium(§15)。codex 用 CLI 非 MCP(全局已禁 MCP)。
+
+**实现状态**:`discover.sh` 发现层已验证可跑(P2 枚举实测正常;P0 仅受代理 7890 偶发 reset 影响,已加 3 次重试)。`review_pr`/`escalate_pr`/P2 巡检为待填骨架。
+
+---
+
 ## 参考来源
 
 - [10 Open Source AI Code Review Tools Tested (2026) — Augment Code](https://www.augmentcode.com/tools/open-source-ai-code-review-tools-worth-trying)
