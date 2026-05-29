@@ -23,7 +23,8 @@ LENSES = {
                 "纯文档/格式/配置改动不要求测试。",
     "docs":     "文档/注释同步(只看文档):改了公共签名/接口/CLI/路由/ABI 而文档或 doc 注释没同步则报;"
                 "明显与代码矛盾的注释也报。纯内部重构不要求。",
-    "consistency": "代码库一致性(只看一致性):命名/目录组织/错误处理/API 设计/导入风格是否沿用既有约定。",
+    "consistency": "代码库一致性(只看一致性):命名/目录组织/错误处理/API 设计/导入风格是否沿用既有约定。"
+                   "【不要】报安全/密钥/SQL注入/测试/文档问题——那些不属于一致性维度。",
 }
 
 SCHEMA_HINT = (
@@ -33,6 +34,16 @@ SCHEMA_HINT = (
     '"description":"<问题>","suggestion":"<改法>"}]}\n'
     '只报高置信度问题;不确定就不报。findings 可为空数组。'
 )
+
+
+_STOP = set("the a an is are be to of in on for and or with without due using use code source which "
+            "both critical major minor issue issues should must this that it its present used vulnerable "
+            "vulnerability via from into not no key".split())
+
+
+def _sig(desc):
+    """从描述里抽显著关键词集合,用于跨 lens 语义去重。"""
+    return {w for w in re.findall(r"[a-z0-9]+", (desc or "").lower()) if len(w) > 3 and w not in _STOP}
 
 
 def omlx_chat(system, user, model, max_tokens=2000):
@@ -65,7 +76,12 @@ def parse_json(text):
 
 
 def run_lens(key, diff, evidence, model):
-    system = (f"你是严格的代码审查器。{LENSES[key]}\n绝不修改代码,只给建议。\n{SCHEMA_HINT}")
+    scope = ("⚠️ 你只负责【%s】这一个维度。**本维度之外的问题——尤其是其它审查器负责的:"
+             "安全漏洞→由 security 负责、测试→testing、文档→docs、一致性→consistency——"
+             "即使你看到了也【绝对不要】报告**,会被判为越界/噪声。"
+             "若本次改动与【%s】无关,findings 直接返回空数组 []。") % (key, key)
+    system = (f"你是严格的代码审查器,专职【{key}】维度。\n{LENSES[key]}\n{scope}\n"
+              f"绝不修改代码,只给建议。\n{SCHEMA_HINT}")
     user = f"[确定性证据(Semgrep/Slither,可能为空)]\n{evidence or '(无)'}\n\n[PR diff]\n{diff}"
     raw = omlx_chat(system, user, model)
     obj = parse_json(raw)
@@ -128,8 +144,18 @@ def main():
         except Exception as e:
             print(f"失败: {e}")
 
-    # 聚合
-    all_f = [{**f, "lens": r["lens"]} for r in reports for f in r.get("findings", [])]
+    # 聚合 + 语义去重:同文件、描述关键词高度重叠的 finding 跨 lens 合并(防小模型串味刷屏)。
+    raw_f = [{**f, "lens": r["lens"]} for r in reports for f in r.get("findings", [])]
+    all_f = []
+    for f in raw_f:
+        s = _sig(f.get("description"))
+        hit = next((g for g in all_f if g.get("path") == f.get("path") and s and g["_sig"]
+                    and len(s & g["_sig"]) / max(1, len(s | g["_sig"])) >= 0.4), None)
+        if hit:
+            if f["lens"] not in hit["lens"].split("+"):
+                hit["lens"] += "+" + f["lens"]
+            continue
+        all_f.append({**f, "_sig": s})
     body = ["## 🤖 Power-Reviewer 本地审查 (Qwen2.5-Coder via omlx, 直评模式)\n"]
     if truncated:
         body.append("> ⚠️ diff 过大已截断,仅审查前部分(TODO: token 分块)。\n")
