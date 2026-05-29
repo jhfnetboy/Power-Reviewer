@@ -29,11 +29,27 @@ else
   repo="${TARGET%%#*}"; num="${TARGET##*#}"
 fi
 [[ -n "$repo" && "$num" =~ ^[0-9]+$ ]] || { echo "❌ 解析不出 repo/PR:$TARGET"; exit 1; }
-echo "  解析为: repo=$repo  pr=$num"
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-echo "▶ clone $repo#$num 深审  模型=$MODEL  DRY_RUN=${DRY_RUN:-0}"
-gh repo clone "$repo" "$tmp" -- --depth 50 -q
-cd "$tmp" && gh pr checkout "$num" -q
+echo "  解析为: repo=$repo  pr=$num   DRY_RUN=${DRY_RUN:-0}"
+
+# 优先用你的本地克隆(repos-local.map: "owner/repo  /abs/path");没有才回退 gh clone。
+MAP="repos-local.map"
+localdir=""
+[ -f "$MAP" ] && localdir="$(awk -v r="$repo" '$1==r{print $2; exit}' "$MAP")"
+localdir="${localdir/#\~/$HOME}"   # 展开 ~
+
+if [ -n "$localdir" ] && [ -d "$localdir/.git" ]; then
+  echo "▶ 用本地克隆 $localdir(git worktree,不走网络、不动你的工作分支)"
+  git -C "$localdir" fetch -q origin "pull/$num/head:pr-review-$num" 2>/dev/null \
+    || { echo "  fetch PR ref 失败(代理?)"; exit 1; }
+  wt="$(mktemp -d)"
+  trap 'git -C "$localdir" worktree remove --force "$wt" 2>/dev/null; rm -rf "$wt"' EXIT
+  git -C "$localdir" worktree add -q --detach "$wt" "pr-review-$num"
+  cd "$wt"
+else
+  echo "▶ ⚠️ repos-local.map 里没有 $repo → 回退 gh clone 到临时目录(慢/占盘)。建议加进 repos-local.map。"
+  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  gh repo clone "$repo" "$tmp" -- --depth 50 -q && cd "$tmp" && gh pr checkout "$num" -q || { echo "clone/checkout 失败"; exit 1; }
+fi
 if [ "${DRY_RUN:-0}" = "1" ]; then
   opencode run --agent "$AGENT" -m "$MODEL" \
     "Review the current branch against its base. No posting — print the review to stdout. Do not edit code."
