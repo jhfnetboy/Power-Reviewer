@@ -199,6 +199,84 @@ Anthropic 在 2026 年 2 月更新了条款,新增 **Authentication and Credenti
 
 ---
 
+## 9. Kodus 深入(底座候选)
+
+**定位**:开源(AGPLv3)、可完全自托管的 AI code review 引擎,哲学是 **"AST 确定性分析 + LLM 语义分析 + 自定义规则 = 低噪声"**——正好对上"24h 跑但别刷屏"的核心痛点。
+
+**review 流水线(webhook 进来之后)**:
+```
+GitHub webhook → ① 起 sandbox(默认 local 跑在 worker;或付费 e2b 远程)
+→ ② 构建 AST 图(确定性,非 GPT)读模块依赖
+→ ③ 从工具拉上下文(插件:Jira / CI 日志 / 测试覆盖率)
+→ ④ 多个专门 agent 并行 review(KodyRulesAgent + 安全/质量…)
+→ ⑤ 去重 + 按严重度分级 + 给修改建议
+→ ⑥ 发回 PR 评论
+```
+全程在自己网络/数据库/基础设施里跑,代码不出网。
+
+**组件(Docker 全栈)**:`web` + `api` + `worker` + `webhooks`(独立服务,3332 端口)+ `RabbitMQ` + `Postgres/pgvector` + `MongoDB`。
+
+**对本项目特别有用的亮点**:
+- **KodyRules / Policy-as-Code**:用大白话写规则、可**按文件夹**生效("此目录必须有测试""API 改动必须更新文档")。七项诉求里"文档同步/测试完整/业务一致性"很多可直接编码成规则,不靠模型瞎猜。
+- **自动识别已有规则文件**:能读 Cursor / Copilot / Claude / Windsurf 的 rule 文件。
+- **模型无关**:任意 OpenAI 兼容端点 → 直指本地 Ollama/LiteLLM。
+- **AST 规则引擎给 LLM 喂"精确结构化上下文"**而非整坨 diff,这是降噪的根。
+- 默认只评论不改代码,符合 review-only 诉求。
+- 有 CLI 版 **`kodus-ai-cr`**,适合塞进 CI(见 §11)。
+
+**老实说的 caveat**:
+1. **跨文件能力营销 vs 实测有落差**:官方主打"AST 图 + 跨文件上下文",但独立的 450K 文件 monorepo 评测发现它实际仍偏"单文件孤立审查",跨服务破坏性改动捕捉不如预期。"业务一致性"别指望开箱即用,要靠 KodyRules + pgvector 检索补。
+2. **文档有缺口、星不多(~976★)**:多语言 monorepo 配置文档不全,部分要读源码;非 TS 项目生产效果未充分验证。
+
+## 10. PR-Agent 可借鉴清单(B 方案不采用,但抄设计)
+
+无论最后走 Kodus 还是自研,这些模式都值得抄:
+1. **⭐ "Prompt 即配置,而非代码"**:检查类别/严重度阈值/规则放在 JSON/TOML + prompt 模板里,改行为不改代码、不重新部署。自研一开始就这么设计,迭代快一个量级。
+2. **⭐ Adaptive token-aware patch fitting**:大 PR 装不下窗口时,按 token 预算自适应压缩/分块且保住语义。**本地小模型上下文窗口比云小**,这套策略几乎一定用得上。
+3. **单工具单次 LLM 调用 + self-reflection 自校验**:`/review` 等单次调用(~30s)换速度/成本,加自检步骤降幻觉。24h 追求吞吐时比多轮 agent 划算。
+4. **Provider/平台抽象层**:LLM provider 和 Git 平台都抽象掉 → 对应到用 LiteLLM 做统一端点。
+5. **⚠️ 两个反面教材(主动规避)**:
+   - **静默回退云端**:本地配置有 bug 时(issues #2098/#2083)会悄悄 fallback 到 OpenAI——对"代码不出网"是灾难。**教训:本地优先要显式、失败要大声报错,绝不静默上云。**
+   - **localhost 可达性**:不能用 GitHub 托管 runner 连本机 Ollama。**教训:本地模型的 review 执行必须跑在能访问本地模型的机器上(那台 Mac)。**
+
+## 11. 利用 GitHub 免费算力(重要架构优化)
+
+**核心事实(2026)**:
+- **公开仓库**:GitHub Actions 标准托管 runner **完全免费**;**自托管 runner 也免费**;**CodeQL 代码扫描免费**。
+- **私有仓库**:托管 runner 有按 plan 的免费分钟配额;CodeQL 需 **GHAS(付费)**;自托管 runner 原计划 2026-03 起 $0.002/min(已推迟、重新评估中)。
+
+**⭐ 关键洞察:把 GitHub Actions 当"编排 + webhook + 确定性算力"层,把那台 Mac 注册成 self-hosted runner 跑本地模型。** 这样:
+- **省掉自建 webhook/隧道**:Actions 原生就是触发器,不必为触发去搭 Kodus 的 RabbitMQ/Postgres 全栈,也不必 Cloudflare Tunnel。
+- **解决 localhost 可达性**(§10 的坑):本地模型 job 直接派发到你 Mac 上的 self-hosted runner。
+- **确定性层白嫖免费托管 runner**:Semgrep / CodeQL(公开仓库)/ lint / 测试 / 覆盖率 diff 跑在免费 GitHub 托管 runner 上;只有"本地 LLM review"这一步派给 Mac。
+
+**因此推荐的混合编排**:
+```
+GitHub Actions (PR 触发, 免费)
+├─ job A (github-hosted, 免费): Semgrep + CodeQL(公开仓) + lint + test + coverage diff
+│        └─ 把硬证据(SARIF/覆盖率)作为 artifact 传给 job B
+└─ job B (self-hosted = 你的 Mac): 本地 Qwen-Coder 在硬证据基础上做语义 review
+         └─ 复杂/安全关键时,经官方 CLI 升级到订阅大脑(限流)
+         └─ gh pr comment / review API 发回评论
+```
+- **建议主力仓库尽量用公开仓**(若可能):Actions + 自托管 runner + CodeQL 全免费。
+- **私有仓库**:用 Semgrep OSS 替代 CodeQL(免费、自托管),自托管 runner 计费变动留意官方最新口径。
+- 可直接在 job B 里跑 **`kodus-ai-cr` CLI**,省掉 Kodus 整套 Docker 栈。
+
+## 12. Fork 策略与仓库结构(待定,见正文问题)
+
+现状:`Power-Reviewer` 已是 git 仓库,`origin = github.com/jhfnetboy/Power-Reviewer`。
+诉求:fork Kodus 作为上游,在其上加自己的 feature;Power-Reviewer 同时保留自己的 origin。
+
+三种结构(详见对话):
+- **结构①(推荐)两仓 + submodule**:Power-Reviewer 当"大脑/编排 + Actions + 自定义 feature";另 fork Kodus 为独立仓(`upstream=kodustech/kodus-ai`),以 submodule 挂进 `vendor/kodus`。升级上游干净,AGPL 边界清晰,feature 不与 Kodus monorepo 纠缠。
+- **结构② 单仓即 Kodus fork**:Power-Reviewer 本身 = Kodus fork(`origin=自己`,`upstream=Kodus`,`merge --allow-unrelated-histories`)。可深度改 Kodus 内部,但合并维护痛、AGPL 覆盖整库。
+- **结构③ 多 remote 仅参考**:`origin` + `upstream-kodus` + `upstream-pragent` 只读,cherry-pick/参考,不整树合并。最轻,适合"借鉴为主"。
+
+> ⚠️ 阻塞项:`gh` 当前 token 失效 + 代理(127.0.0.1:7890)connection reset,需先 `gh auth login` 才能真正在 GitHub fork。
+
+---
+
 ## 参考来源
 
 - [10 Open Source AI Code Review Tools Tested (2026) — Augment Code](https://www.augmentcode.com/tools/open-source-ai-code-review-tools-worth-trying)
@@ -210,5 +288,8 @@ Anthropic 在 2026 年 2 月更新了条款,新增 **Authentication and Credenti
 - [Smart Orchestrator + Cheaper Sub-Agents — MindStudio](https://www.mindstudio.ai/blog/smart-orchestrator-cheaper-sub-agent-models-claude-code) · [The Code Agent Orchestra — Addy Osmani](https://addyosmani.com/blog/code-agent-orchestra/)
 - [Semgrep + LLM 降误报 — Medium](https://medium.com/@adan.alvarez/diy-using-semgrep-with-llms-to-improve-code-reviews-d43d0584b34f) · [Semgrep AI-Powered Detection (IDOR)](https://semgrep.dev/blog/2025/ai-powered-detection-with-semgrep/) · [LLM 后置过滤静态分析误报（arXiv）](https://arxiv.org/pdf/2511.04023)
 - [Claude Code Headless 自托管指南](https://amux.io/guides/claude-code-headless/) · [Max 计划 OAuth vs API Key（2026）](https://lalatenduswain.medium.com/claude-code-on-claude-max-plan-understanding-oauth-token-vs-api-key-authentication-in-2026-96a6213d2cde) · [误走 API 计费 $1800 事故 issue](https://github.com/anthropics/claude-code/issues/37686)
+- [Kodus Policy-as-Code Review](https://kodus.io/policy-as-code-review/) · [Show HN: Kodus（AST + LLM, less noise）](https://news.ycombinator.com/item?id=43572816) · [Kodus CR CLI](https://github.com/kodustech/kodus-ai-cr)
+- [GitHub Actions Billing & Usage](https://docs.github.com/en/actions/concepts/billing-and-usage) · [Actions 定价变更（2026）](https://resources.github.com/actions/2026-pricing-changes-for-github-actions/) · [自托管 runner 计费推迟](https://devclass.com/2025/12/17/github-to-charge-for-self-hosted-runners-from-march-2026/)
+- [About GitHub Advanced Security（CodeQL 私有仓需 GHAS）](https://docs.github.com/en/get-started/learning-about-github/about-github-advanced-security) · [About code scanning with CodeQL](https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning-with-codeql)
 </content>
 </invoke>

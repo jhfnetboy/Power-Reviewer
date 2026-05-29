@@ -1,0 +1,7 @@
+.env
+*.log
+.evidence/
+*.sarif
+.DS_Store
+node_modules/
+__pycache__/

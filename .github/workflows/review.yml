@@ -1,0 +1,66 @@
+# Power-Reviewer 混合编排:确定性层(免费托管 runner)+ 本地 LLM 层(自托管 Mac runner)
+# 把这个文件放进【被审查仓库】的 .github/workflows/ 下,而不是只放在 Power-Reviewer 仓。
+name: power-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write      # 发 review 评论
+  security-events: write    # 上传 SARIF(CodeQL/Semgrep)
+
+jobs:
+  # ── 层1:确定性证据,跑在免费 GitHub 托管 runner ──────────────────
+  deterministic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # 覆盖率/diff 需要历史
+
+      - name: Semgrep (SAST)
+        run: |
+          pipx install semgrep
+          # --config auto 用社区规则;也可指向 deterministic/ 下你的规则集
+          semgrep --config auto --sarif --output semgrep.sarif . || true
+
+      # TODO(按项目语言补全):
+      #   - 单元测试 + 覆盖率:跑测试,生成 coverage.xml
+      #   - 覆盖率 diff:对比 base 分支,标出"改了代码但覆盖率没涨"的文件
+      #   - lint / typecheck
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: deterministic-evidence
+          path: |
+            semgrep.sarif
+          if-no-files-found: warn
+
+  # ── 层2 & 3:本地模型 review(+ 必要时升级大脑),跑在你的 Mac ──────
+  llm-review:
+    needs: deterministic
+    # 你的 Mac 注册为 self-hosted runner 时打这些标签(见 scripts/register-runner.md)
+    runs-on: [self-hosted, macos, power-reviewer]
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Download deterministic evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: deterministic-evidence
+          path: ./.evidence
+
+      - name: Local-model review → PR comments
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO:      ${{ github.repository }}
+          BASE_SHA:  ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA:  ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN:  ${{ github.token }}
+          LITELLM_BASE: http://localhost:4000     # 本地 LiteLLM 端点
+        run: ${{ github.workspace }}/orchestrator/run-review.sh
+        # 注:run-review.sh 来自 Power-Reviewer 仓。若本工作流放在别的被审查仓,
+        # 用 actions/checkout 多仓签出或把 Power-Reviewer 装成可复用 action(见 README 状态)。
