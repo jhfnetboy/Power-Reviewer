@@ -21,7 +21,15 @@ if [ -z "$TARGET" ]; then
     "Review current branch against main. No PR number — print the review to stdout. Do not edit code."
 fi
 
-repo="${TARGET%%#*}"; num="${TARGET##*#}"
+# 支持 owner/repo#N 或 完整 URL https://github.com/owner/repo/pull/N
+if [[ "$TARGET" == *github.com/*/pull/* ]]; then
+  repo="$(printf '%s' "$TARGET" | sed -E 's#.*github\.com/([^/]+/[^/]+)/pull/[0-9]+.*#\1#')"
+  num="$(printf '%s'  "$TARGET" | sed -E 's#.*/pull/([0-9]+).*#\1#')"
+else
+  repo="${TARGET%%#*}"; num="${TARGET##*#}"
+fi
+[[ -n "$repo" && "$num" =~ ^[0-9]+$ ]] || { echo "❌ 解析不出 repo/PR:$TARGET"; exit 1; }
+echo "  解析为: repo=$repo  pr=$num"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 echo "▶ clone $repo#$num 深审  模型=$MODEL  DRY_RUN=${DRY_RUN:-0}"
 gh repo clone "$repo" "$tmp" -- --depth 50 -q
