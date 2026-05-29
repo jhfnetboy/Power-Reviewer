@@ -21,7 +21,7 @@ esc_count(){ [[ -f "$ESC_LOG" ]] && wc -l < "$ESC_LOG" | tr -d ' ' || echo 0; }
 # 本地多维度审查(只评论,绝不改代码)
 review_pr(){ # repo num
   local repo="$1" num="$2"
-  log "  → 直评 $repo#$num (Qwen2.5-Coder via omlx, 非agentic)"
+  log "  → 直评 $repo#$num (${REVIEW_MODEL##*/} via omlx, 非agentic)"
   # 路径2:直评。不用 opencode agentic(本地模型 tool-call omlx 解析不了),纯 chat completion。
   OMLX_API_KEY="${OMLX_API_KEY:-}" OMLX_BASE="${OMLX_BASE:-http://localhost:8088/v1}" \
     python3 "$REPO_ROOT/review/direct_review.py" --repo "$repo" --pr "$num" \

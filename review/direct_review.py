@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """路径2:非 agentic 直评。diff(+证据) → omlx 每个 lens 出结构化 JSON → 聚合 → gh 发 inline review。
-不用工具调用(本地 2.5-Coder 的 tool-call omlx 解析不了),纯 chat completion,对 24h 跑更稳。
+不用工具调用(纯 chat completion,对本地小模型/24h 跑最稳),逐 lens 出结构化 JSON。
 
 用法:
   OMLX_API_KEY=... python3 review/direct_review.py --repo owner/repo --pr 123 [--dry-run]
