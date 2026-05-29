@@ -4,8 +4,10 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
+# 配置优先读仓库根 .env(单一真相源);没有则回退 daemon/config.env
 # shellcheck disable=SC1091
-source "$HERE/config.env"
+if [ -f "$REPO_ROOT/.env" ]; then set -a; . "$REPO_ROOT/.env"; set +a
+else . "$HERE/config.env"; fi
 export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1}"   # 坑#7:别让代理吞本地 omlx 请求
 
 mkdir -p "$STATE_DIR"
