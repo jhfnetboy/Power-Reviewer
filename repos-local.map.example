@@ -1,0 +1,5 @@
+# owner/repo → 本地克隆绝对路径(TAB 或空格分隔)。复制为 repos-local.map(已 gitignore)。
+# 可手填,或用 scripts/gen-repos-map.sh 自动扫描生成。
+# 例:
+# AAStarCommunity/SuperPaymaster	/Users/jason/Dev/AAStar/SuperPaymaster
+# MushroomDAO/launch	/Users/jason/Dev/MushroomDAO/launch

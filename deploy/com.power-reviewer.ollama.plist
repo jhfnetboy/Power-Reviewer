@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 坑#3:macOS Jetsam 会优先杀掉占 ~18-24GB 的 ollama。用 LaunchAgent 自动重启 + 常驻模型。
+     安装:cp 到 ~/Library/LaunchAgents/ 后  launchctl load -w ~/Library/LaunchAgents/com.power-reviewer.ollama.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.power-reviewer.ollama</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/ollama</string>
+    <string>serve</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OLLAMA_KEEP_ALIVE</key><string>-1</string>
+    <key>OLLAMA_MAX_LOADED_MODELS</key><string>1</string>
+    <!-- 坑#6:OpenCode orchestrator 会并行 fan-out 多个 lens 到同一 Ollama。
+         64GB 上 24GB 模型,串行执行避免 OOM。需要吞吐就排队,别真并行。 -->
+    <key>OLLAMA_NUM_PARALLEL</key><string>1</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardErrorPath</key><string>/tmp/ollama.err.log</string>
+  <key>StandardOutPath</key><string>/tmp/ollama.out.log</string>
+</dict>
+</plist>

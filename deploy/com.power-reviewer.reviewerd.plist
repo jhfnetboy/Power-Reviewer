@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 常驻 24h 调度器。装:改下面 ProgramArguments 路径为你的实际仓库路径,
+     cp 到 ~/Library/LaunchAgents/ 后  launchctl load -w ~/Library/LaunchAgents/com.power-reviewer.reviewerd.plist
+     KeepAlive=true → 崩溃自动重启;它自身是 while 循环,launchd 兜底。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.power-reviewer.reviewerd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jason/Dev/tools/Power-Reviewer/daemon/reviewerd.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NO_PROXY</key><string>localhost,127.0.0.1</string>
+    <key>PATH</key><string>/Users/jason/.local/bin:/Users/jason/.opencode/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>OMLX_BASE</key><string>http://localhost:8088/v1</string>
+    <key>OMLX_API_KEY</key><string>__SET_OMLX_API_KEY__</string>
+    <!-- 联调期设 1 = 只发现+审查、不发评论;验稳后改成 0 转真发 -->
+    <key>DRY_RUN</key><string>1</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardErrorPath</key><string>/tmp/reviewerd.err.log</string>
+  <key>StandardOutPath</key><string>/tmp/reviewerd.out.log</string>
+</dict>
+</plist>

@@ -1,0 +1,3 @@
+[submodule "vendor/opencode-review"]
+	path = vendor/opencode-review
+	url = https://github.com/cedricwider/opencode-review.git

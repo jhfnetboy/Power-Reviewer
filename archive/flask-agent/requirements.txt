@@ -1,0 +1,7 @@
+flask>=3.0
+gunicorn>=21
+redis>=5
+rq>=1.16
+langgraph>=0.2
+langchain-ollama>=0.2
+PyGithub>=2.3

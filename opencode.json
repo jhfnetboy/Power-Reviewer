@@ -1,0 +1,122 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "① Ollama (本地, 默认/先测; 0.19+ Apple Silicon 已用 MLX)",
+      "options": { "baseURL": "http://localhost:11434/v1" },
+      "models": {
+        "qwen2.5-coder:32b": { "name": "Qwen2.5-Coder 32B (主力)" },
+        "qwen3:8b": { "name": "Qwen3 8B (轻量)" }
+      }
+    },
+
+    "lmstudio": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "② LM Studio (MLX + GUI, 第2测; 默认端口 1234)",
+      "options": { "baseURL": "http://localhost:1234/v1" },
+      "models": {
+        "qwen2.5-coder-32b-instruct": { "name": "以 LM Studio 里加载的模型名为准" }
+      }
+    },
+
+    "omlx": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "oMLX (MLX + 连续批处理 + 内置tool-call; 默认后端; 端口 8088)",
+      "options": {
+        "baseURL": "http://localhost:8088/v1",
+        "apiKey": "{env:OMLX_API_KEY}"
+      },
+      "models": {
+        "Qwen2.5-Coder-32B-Instruct-MLX-8bit": { "name": "Qwen2.5-Coder 32B 8bit (主力)" },
+        "Qwen3-Coder-30B-A3B-Instruct-MLX-8bit": { "name": "Qwen3-Coder 30B-A3B MoE (备选,更快)" },
+        "Qwen3-8B-4bit": { "name": "Qwen3 8B (轻量, docs lens)" }
+      }
+    },
+
+    "llamacpp": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "(备) llama.cpp llama-server (原生 Metal; 默认端口 8080)",
+      "options": { "baseURL": "http://localhost:8080/v1" },
+      "models": {
+        "default": { "name": "llama-server 启动时加载的模型(名字随 -m 参数)" }
+      }
+    }
+  },
+
+  "agent": {
+    "pr-reviewer": {
+      "description": "本地多维度 PR 审查编排器:分诊 → 并行派发 lens → 汇总去重 → 发 inline 评论",
+      "mode": "primary",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
+      "prompt": "{file:./vendor/opencode-review/prompts/pr-reviewer-orchestrator.md}",
+      "permission": {
+        "read": "allow", "edit": "deny", "bash": "allow",
+        "glob": "allow", "grep": "allow", "task": "allow",
+        "webfetch": "deny", "todowrite": "allow", "todoread": "allow"
+      }
+    },
+
+    "pr-review-security": {
+      "description": "安全 lens:OWASP + Web3/Solidity 智能合约专项(他们的代码大量是 Paymaster/EIP-7702)",
+      "mode": "subagent",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
+      "prompt": "{file:./prompts/pr-review-security.md}",
+      "hidden": true,
+      "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
+    },
+
+    "pr-review-testing": {
+      "description": "测试覆盖 lens:改动是否有配套单测/E2E",
+      "mode": "subagent",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
+      "prompt": "{file:./vendor/opencode-review/prompts/pr-review-testing.md}",
+      "hidden": true,
+      "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
+    },
+
+    "pr-review-docs": {
+      "description": "文档/注释同步 lens(本仓自加,覆盖第7项诉求)",
+      "mode": "subagent",
+      "model": "omlx/Qwen3-8B-4bit",
+      "prompt": "{file:./prompts/pr-review-docs.md}",
+      "hidden": true,
+      "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
+    },
+
+    "pr-review-consistency": {
+      "description": "代码库一致性 lens:命名/组织/模式是否沿用既有约定",
+      "mode": "subagent",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
+      "prompt": "{file:./vendor/opencode-review/prompts/pr-review-consistency.md}",
+      "hidden": true,
+      "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
+    },
+
+    "pr-review-design": {
+      "description": "[默认关] 设计/方案 lens — 留给升级深审",
+      "mode": "subagent",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
+      "prompt": "{file:./vendor/opencode-review/prompts/pr-review-design.md}",
+      "hidden": true, "disable": true,
+      "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
+    },
+    "pr-review-solid": {
+      "description": "[默认关] SOLID/结构 lens — 留给升级深审",
+      "mode": "subagent",
+      "model": "omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit",
+      "prompt": "{file:./vendor/opencode-review/prompts/pr-review-solid.md}",
+      "hidden": true, "disable": true,
+      "permission": { "read": "allow", "edit": "deny", "bash": "allow", "glob": "allow", "grep": "allow", "task": "deny", "webfetch": "deny" }
+    }
+  },
+
+  "command": {
+    "review": {
+      "description": "本地多维度审查 PR 或当前分支改动",
+      "template": "Review changes for the pr $ARGUMENTS. Fall back to the pull request of the current branch. If there is no existing pull request, review changes in the current branch against main (or master).",
+      "agent": "pr-reviewer"
+    }
+  }
+}

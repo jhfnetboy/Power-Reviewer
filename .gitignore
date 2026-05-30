@@ -1,0 +1,8 @@
+.env
+*.log
+.evidence/
+*.sarif
+.DS_Store
+node_modules/
+__pycache__/
+repos-local.map
