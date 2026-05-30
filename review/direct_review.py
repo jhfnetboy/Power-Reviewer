@@ -10,6 +10,21 @@
 """
 import argparse, json, os, re, subprocess, sys, urllib.request
 
+def _load_dotenv():
+    """直接 python 跑(没经过 run.sh)时,自动从仓库根 .env 补上 OMLX_API_KEY 等,免得 401。"""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    p = os.path.join(root, ".env")
+    if not os.path.exists(p):
+        return
+    for ln in open(p):
+        ln = ln.strip()
+        if not ln or ln.startswith("#") or "=" not in ln:
+            continue
+        k, v = ln.split("=", 1)
+        os.environ.setdefault(k.strip(), os.path.expandvars(v.strip()))
+
+
+_load_dotenv()
 OMLX_BASE = os.environ.get("OMLX_BASE", "http://localhost:8088/v1")
 OMLX_KEY  = os.environ.get("OMLX_API_KEY", "")
 MAX_DIFF_CHARS = int(os.environ.get("MAX_DIFF_CHARS", "40000"))  # 本地上下文有限,先粗暴截断(TODO:按 token 分块)
@@ -141,6 +156,7 @@ def main():
     evidence = open(a.evidence_file).read() if a.evidence_file and os.path.exists(a.evidence_file) else ""
 
     reports = []
+    failed = []
     for key in [x.strip() for x in a.lenses.split(",") if x.strip()]:
         print(f"  [lens] {key} … ", end="", flush=True)
         try:
@@ -149,6 +165,12 @@ def main():
             reports.append(rep)
         except Exception as e:
             print(f"失败: {e}")
+            failed.append(key)
+
+    # 关键:所有 lens 都失败 → 绝不发"未发现问题 ✅"的假平安评论;报错退出。
+    if not reports:
+        hint = "(401=OMLX_API_KEY 没设/无效;先 export 或经 run.sh 跑;确认 omlx 在 %s)" % OMLX_BASE
+        sys.exit(f"❌ 所有 lens 都失败({len(failed)} 个),不发任何评论。{hint}")
 
     # 聚合 + 语义去重:同文件、描述关键词高度重叠的 finding 跨 lens 合并(防小模型串味刷屏)。
     raw_f = [{**f, "lens": r["lens"]} for r in reports for f in r.get("findings", [])]
@@ -174,6 +196,8 @@ def main():
         body.append(f"> {a.note}\n")
     if truncated:
         body.append("> ⚠️ diff 过大已截断,仅审查前部分(TODO: token 分块)。\n")
+    if failed:
+        body.append(f"> ⚠️ {len(failed)} 个 lens 调用失败({','.join(failed)}),本次仅基于成功的 lens,可能漏报。\n")
     for r in reports:
         body.append(f"- **{r['lens']}**: {r.get('verdict','?')} — {r.get('summary','').strip()}")
     note = f"({len(kept)} 条" + (f";已过滤 {len(dropped_noise)} 条生成/机械文件噪声" if dropped_noise else "") + ")"
