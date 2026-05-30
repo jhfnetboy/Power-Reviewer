@@ -25,16 +25,16 @@ jobs:
           name: deterministic-evidence
           path: ./.evidence
 
-      - name: OpenCode multi-lens review (本地 Qwen)
+      - name: OpenCode multi-lens review (本地 omlx / Qwen3-Coder)
         uses: anomalyco/opencode/github@latest
         env:
-          # 本地模型无需 API key;OpenCode 读仓库根的 opencode.json → ollama 本地 provider
-          NO_PROXY: localhost,127.0.0.1     # 坑#7:别让 Clash 吞掉本地请求
+          # OMLX_API_KEY / OMLX_BASE / no_proxy 由 self-hosted runner 的 .env 注入(不放 GitHub secret)。
+          # opencode 读全局 ~/.config/opencode/opencode.json(scripts/sync-opencode-global.sh 同步)→ omlx provider。
+          NO_PROXY: localhost,127.0.0.1
         with:
-          # TODO: 核对该 action 的真实输入参数(agent/model/prompt)。
-          #   目标:用 opencode.json 里的 primary agent `pr-reviewer` 跑 /review。
-          model: ollama/qwen2.5-coder:32b
+          # primary agent = pr-reviewer(opencode.json),会自动多 lens 编排
+          model: omlx/Qwen3-Coder-30B-A3B-Instruct-MLX-8bit
           prompt: |
-            Run the `pr-reviewer` orchestrator to review this pull request.
+            Use the `pr-reviewer` agent to review this pull request.
             Read any SARIF under ./.evidence first and build on it.
-            Post the synthesized review as an inline PR review. Do not modify code.
+            Post the synthesized review as an inline PR review via gh-pr-review. Do not modify code.
